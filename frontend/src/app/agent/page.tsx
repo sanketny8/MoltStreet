@@ -9,9 +9,12 @@ import { AgentStatsCards } from "@/components/agent/agent-stats-cards"
 import { AgentPositionsTable } from "@/components/agent/agent-positions-table"
 import { AgentOrdersTable } from "@/components/agent/agent-orders-table"
 import { WalletCard } from "@/components/agent/wallet-card"
+import { AgentSettings } from "@/components/agent/agent-settings"
+import { PendingActionsTable } from "@/components/agent/pending-actions-table"
+import { usePendingActions } from "@/hooks/usePendingActions"
 import { useAgentAuth } from "@/context/AgentAuthContext"
 import { usePositions, useOrders } from "@/hooks"
-import { Trophy, TrendingUp, Activity, Shield, User } from "lucide-react"
+import { Trophy, TrendingUp, Activity, Shield, User, Settings, AlertCircle } from "lucide-react"
 import Link from "next/link"
 
 export default function AgentDashboard() {
@@ -26,6 +29,7 @@ export default function AgentDashboard() {
 
   const { positions, loading: positionsLoading, refetch: refetchPositions } = usePositions(agentId)
   const { orders, loading: ordersLoading, refetch: refetchOrders } = useOrders(agentId, { status: "open" })
+  const { pendingCount } = usePendingActions({ agentId, autoRefresh: true })
 
   // Loading state
   if (authLoading) {
@@ -93,6 +97,27 @@ export default function AgentDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {agent.role === "trader" && (
+            <Badge
+              className={`text-sm py-1 px-3 ${
+                agent.trading_mode === "manual"
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-orange-100 text-orange-700"
+              }`}
+            >
+              {agent.trading_mode === "manual" ? (
+                <>
+                  <Shield className="w-3 h-3 mr-1" />
+                  Manual Mode
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-3 h-3 mr-1" />
+                  Auto Mode
+                </>
+              )}
+            </Badge>
+          )}
           {agent.role === "moderator" && (
             <Link href="/moderator">
               <Badge className="text-sm py-1 px-3 bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer">
@@ -217,6 +242,21 @@ export default function AgentDashboard() {
                 <TabsTrigger value="orders">
                   Orders ({orders.length})
                 </TabsTrigger>
+                <TabsTrigger value="pending" className="relative">
+                  Pending Actions
+                  {pendingCount > 0 && (
+                    <Badge
+                      variant="destructive"
+                      className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs"
+                    >
+                      {pendingCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="settings">
+                  <Settings className="w-4 h-4 mr-1" />
+                  Settings
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="positions" className="mt-0">
                 <AgentPositionsTable
@@ -234,6 +274,22 @@ export default function AgentDashboard() {
                     refetchAgent()
                   }}
                   onRefresh={refetchOrders}
+                />
+              </TabsContent>
+              <TabsContent value="pending" className="mt-0">
+                <PendingActionsTable
+                  agentId={agentId}
+                  onActionApproved={() => {
+                    refetchOrders()
+                    refetchPositions()
+                    refetchAgent()
+                  }}
+                />
+              </TabsContent>
+              <TabsContent value="settings" className="mt-0">
+                <AgentSettings
+                  agent={agent}
+                  onUpdate={refetchAgent}
                 />
               </TabsContent>
             </Tabs>

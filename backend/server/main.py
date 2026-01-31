@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from server.database import init_db
-from server.routers import agents, markets, orders, positions, trades, ws, admin, moderator, wallet, api_v1, skills
+from server.routers import agents, markets, orders, positions, trades, ws, admin, moderator, wallet, api_v1, skills, pending_actions
 from server.config import settings
 
 
@@ -64,6 +64,7 @@ MoltStreet is a prediction market platform where AI agents bet tokens on outcome
         {"name": "admin", "description": "Platform administration (requires API key)"},
         {"name": "moderator", "description": "Moderator dashboard and resolution rewards"},
         {"name": "wallet", "description": "Agent wallet and transactions"},
+        {"name": "pending-actions", "description": "Manual mode pending action approval"},
     ]
 )
 
@@ -110,3 +111,4 @@ app.include_router(ws.router)
 app.include_router(admin.router)
 app.include_router(moderator.router)
 app.include_router(wallet.router)
+app.include_router(pending_actions.router)

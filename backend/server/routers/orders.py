@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from server.database import get_session
-from server.models.agent import Agent
+from server.models.agent import Agent, TradingMode
 from server.models.market import Market, MarketStatus
 from server.models.order import Order, OrderStatus, Side
+from server.models.pending_action import ActionType
 from server.schemas.order import (
     OrderCreate,
     OrderResponse,
@@ -16,22 +17,29 @@ from server.schemas.order import (
     CancelOrderResponse,
     TradeResponse,
 )
+from server.schemas.pending_action import PendingActionResult
 from server.services.matching import (
     match_order,
     lock_balance_for_order,
     unlock_balance_for_cancelled_order,
 )
+from server.services.pending_actions import create_pending_action
 from server.websocket import broadcast_order, broadcast_trade, broadcast_market_update
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-@router.post("", response_model=PlaceOrderResponse)
+@router.post("", response_model=Union[PlaceOrderResponse, PendingActionResult])
 async def place_order(
     data: OrderCreate,
     session: AsyncSession = Depends(get_session)
 ):
-    """Place a new order in a market."""
+    """
+    Place a new order in a market.
+
+    If agent is in MANUAL mode, returns a pending action that requires approval.
+    If agent is in AUTO mode, executes immediately.
+    """
     # Validate agent exists
     agent_result = await session.execute(
         select(Agent).where(Agent.id == data.agent_id)
@@ -57,6 +65,39 @@ async def place_order(
     if market.status != MarketStatus.OPEN:
         raise HTTPException(status_code=400, detail="Market is closed")
 
+    # Check trading mode - if MANUAL, create pending action instead
+    if agent.trading_mode == TradingMode.MANUAL:
+        # Validate balance before creating pending action
+        cost = data.price * data.size
+        if agent.available_balance < cost:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient balance. Need {cost}, have {agent.available_balance}"
+            )
+
+        # Create pending action for approval
+        pending_action = await create_pending_action(
+            session=session,
+            agent_id=data.agent_id,
+            action_type=ActionType.PLACE_ORDER,
+            payload={
+                "market_id": str(data.market_id),
+                "side": data.side.value,
+                "price": str(data.price),
+                "size": data.size,
+            },
+            expires_in_hours=24,
+        )
+
+        return PendingActionResult(
+            status="pending_approval",
+            pending_action_id=pending_action.id,
+            action_type=ActionType.PLACE_ORDER,
+            message=f"Order queued for approval. Approve at /pending-actions/{pending_action.id}/approve",
+            expires_at=pending_action.expires_at,
+        )
+
+    # AUTO mode - execute immediately
     # Lock balance for order
     can_lock = await lock_balance_for_order(
         session, data.agent_id, data.price, data.size
@@ -133,13 +174,18 @@ async def place_order(
     )
 
 
-@router.delete("/{order_id}", response_model=CancelOrderResponse)
+@router.delete("/{order_id}", response_model=Union[CancelOrderResponse, PendingActionResult])
 async def cancel_order(
     order_id: UUID,
     agent_id: UUID = Query(...),
     session: AsyncSession = Depends(get_session)
 ):
-    """Cancel an open order."""
+    """
+    Cancel an open order.
+
+    If agent is in MANUAL mode, returns a pending action that requires approval.
+    If agent is in AUTO mode, cancels immediately.
+    """
     # Get order
     result = await session.execute(
         select(Order).where(Order.id == order_id).with_for_update()
@@ -156,6 +202,32 @@ async def cancel_order(
     if order.status not in [OrderStatus.OPEN, OrderStatus.PARTIAL]:
         raise HTTPException(status_code=400, detail="Order cannot be cancelled")
 
+    # Get agent to check trading mode
+    agent = await session.get(Agent, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Check trading mode - if MANUAL, create pending action
+    if agent.trading_mode == TradingMode.MANUAL:
+        pending_action = await create_pending_action(
+            session=session,
+            agent_id=agent_id,
+            action_type=ActionType.CANCEL_ORDER,
+            payload={
+                "order_id": str(order_id),
+            },
+            expires_in_hours=24,
+        )
+
+        return PendingActionResult(
+            status="pending_approval",
+            pending_action_id=pending_action.id,
+            action_type=ActionType.CANCEL_ORDER,
+            message=f"Cancel request queued for approval. Approve at /pending-actions/{pending_action.id}/approve",
+            expires_at=pending_action.expires_at,
+        )
+
+    # AUTO mode - cancel immediately
     # Calculate refund for unfilled portion
     unfilled = order.size - order.filled
     refund = await unlock_balance_for_cancelled_order(

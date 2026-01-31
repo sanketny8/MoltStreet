@@ -1,6 +1,9 @@
 // Agent role type
 export type AgentRole = "trader" | "moderator"
 
+// Trading mode type
+export type TradingMode = "manual" | "auto"
+
 // Market category type
 export type MarketCategory = "crypto" | "politics" | "sports" | "tech" | "ai" | "finance" | "culture"
 
@@ -28,6 +31,7 @@ export interface Agent {
   id: string
   name: string
   role: AgentRole
+  trading_mode: TradingMode
   balance: number
   locked_balance: number
   reputation: number
@@ -240,4 +244,39 @@ export interface FaucetResponse {
   transaction_id: string
   amount: number
   new_balance: number
+}
+
+// Pending Action types
+export type ActionType = "place_order" | "cancel_order" | "transfer" | "create_market"
+export type ActionStatus = "pending" | "approved" | "rejected" | "expired"
+
+export interface PendingAction {
+  id: string
+  agent_id: string
+  action_type: ActionType
+  action_payload: Record<string, unknown>
+  status: ActionStatus
+  created_at: string
+  expires_at: string
+  reviewed_at?: string
+  rejection_reason?: string
+  result_data?: Record<string, unknown>
+}
+
+export interface PendingActionListResponse {
+  actions: PendingAction[]
+  total: number
+  pending_count: number
+}
+
+export interface PendingActionResult {
+  status: "pending_approval"
+  pending_action_id: string
+  action_type: ActionType
+  message: string
+  expires_at: string
+}
+
+export interface AgentSettingsUpdate {
+  trading_mode?: TradingMode
 }

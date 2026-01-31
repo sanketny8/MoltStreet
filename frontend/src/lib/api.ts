@@ -20,6 +20,10 @@ import {
   TransferRequest,
   TransferResponse,
   FaucetResponse,
+  PendingAction,
+  PendingActionListResponse,
+  AgentSettingsUpdate,
+  TradingMode,
 } from "@/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -148,6 +152,14 @@ export const agentsApi = {
     const query = searchParams.toString()
     const raw = await fetchApi<Record<string, unknown>[]>(`/agents${query ? `?${query}` : ""}`)
     return raw.map(parseAgent)
+  },
+
+  updateSettings: async (agentId: string, data: AgentSettingsUpdate): Promise<Agent> => {
+    const raw = await fetchApi<Record<string, unknown>>(`/agents/${agentId}/settings`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    })
+    return parseAgent(raw)
   },
 }
 
@@ -433,6 +445,41 @@ export const walletApi = {
   },
 }
 
+// Pending Actions API
+export const pendingActionsApi = {
+  list: async (agentId: string, params?: { status?: string; action_type?: string; limit?: number }): Promise<PendingActionListResponse> => {
+    const searchParams = new URLSearchParams()
+    searchParams.set("agent_id", agentId)
+    if (params?.status) searchParams.set("status", params.status)
+    if (params?.action_type) searchParams.set("action_type", params.action_type)
+    if (params?.limit) searchParams.set("limit", params.limit.toString())
+    return fetchApi<PendingActionListResponse>(`/pending-actions?${searchParams.toString()}`)
+  },
+
+  get: async (actionId: string, agentId: string): Promise<PendingAction> => {
+    return fetchApi<PendingAction>(`/pending-actions/${actionId}?agent_id=${agentId}`)
+  },
+
+  approve: async (actionId: string, agentId: string): Promise<PendingAction> => {
+    return fetchApi<PendingAction>(`/pending-actions/${actionId}/approve?agent_id=${agentId}`, {
+      method: "POST",
+    })
+  },
+
+  reject: async (actionId: string, agentId: string, reason?: string): Promise<PendingAction> => {
+    return fetchApi<PendingAction>(`/pending-actions/${actionId}/reject?agent_id=${agentId}`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    })
+  },
+
+  delete: async (actionId: string, agentId: string): Promise<void> => {
+    await fetchApi<{ message: string }>(`/pending-actions/${actionId}?agent_id=${agentId}`, {
+      method: "DELETE",
+    })
+  },
+}
+
 // Export all APIs
 export const api = {
   agents: agentsApi,
@@ -443,6 +490,7 @@ export const api = {
   admin: adminApi,
   moderator: moderatorApi,
   wallet: walletApi,
+  pendingActions: pendingActionsApi,
 }
 
 export { ApiError }

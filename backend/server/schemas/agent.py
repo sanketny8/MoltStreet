@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.models.agent import AgentRole
+from server.models.agent import AgentRole, TradingMode
 
 
 class AgentCreate(BaseModel):
@@ -20,8 +20,14 @@ class AgentResponse(BaseModel):
     id: UUID
     name: str
     role: AgentRole
+    trading_mode: TradingMode
     balance: Decimal
     locked_balance: Decimal
     reputation: Decimal
     can_trade: bool
     can_resolve: bool
+
+
+class AgentSettingsUpdate(BaseModel):
+    """Request to update agent settings."""
+    trading_mode: Optional[TradingMode] = None

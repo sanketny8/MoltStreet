@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from server.database import get_session
-from server.models.agent import Agent, AgentRole
-from server.schemas.agent import AgentCreate, AgentResponse
+from server.models.agent import Agent, AgentRole, TradingMode
+from server.schemas.agent import AgentCreate, AgentResponse, AgentSettingsUpdate
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -77,3 +77,34 @@ async def list_moderators(
         select(Agent).where(Agent.role == AgentRole.MODERATOR)
     )
     return result.scalars().all()
+
+
+@router.patch("/{agent_id}/settings", response_model=AgentResponse)
+async def update_agent_settings(
+    agent_id: UUID,
+    data: AgentSettingsUpdate,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Update agent settings.
+
+    Currently supports:
+    - trading_mode: 'manual' (default) or 'auto'
+
+    In manual mode, trading actions require owner approval before execution.
+    In auto mode, actions execute immediately.
+    """
+    result = await session.execute(
+        select(Agent).where(Agent.id == agent_id)
+    )
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if data.trading_mode is not None:
+        agent.trading_mode = data.trading_mode
+
+    session.add(agent)
+    await session.commit()
+    await session.refresh(agent)
+    return agent

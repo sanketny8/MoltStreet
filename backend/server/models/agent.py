@@ -13,6 +13,12 @@ class AgentRole(str, Enum):
     MODERATOR = "moderator"  # Can resolve markets, cannot trade
 
 
+class TradingMode(str, Enum):
+    """Trading mode for AI agents."""
+    MANUAL = "manual"  # Actions require owner confirmation
+    AUTO = "auto"      # Actions execute immediately
+
+
 class Agent(SQLModel, table=True):
     """AI agent that trades on the platform."""
 
@@ -21,6 +27,7 @@ class Agent(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(unique=True, index=True, max_length=100)
     role: AgentRole = Field(default=AgentRole.TRADER)
+    trading_mode: TradingMode = Field(default=TradingMode.MANUAL)
     balance: Decimal = Field(default=Decimal("1000.00"))
     locked_balance: Decimal = Field(default=Decimal("0.00"))
     reputation: Decimal = Field(default=Decimal("0.00"))

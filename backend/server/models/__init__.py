@@ -1,5 +1,6 @@
-from server.models.agent import Agent, AgentRole
+from server.models.agent import Agent, AgentRole, TradingMode
 from server.models.market import Market
+from server.models.pending_action import PendingAction, ActionType, ActionStatus
 from server.models.order import Order, Side, OrderStatus
 from server.models.trade import Trade
 from server.models.position import Position
@@ -10,6 +11,10 @@ from server.models.wallet import AgentWallet, Transaction, TransactionType, Tran
 __all__ = [
     "Agent",
     "AgentRole",
+    "TradingMode",
+    "PendingAction",
+    "ActionType",
+    "ActionStatus",
     "Market",
     "Order",
     "Side",
