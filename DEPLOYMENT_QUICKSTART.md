@@ -76,11 +76,11 @@ alembic upgrade head
 1. Go to [vercel.com](https://vercel.com) and sign up
 2. Click **Add New Project**
 3. Import your GitHub repository
-4. Configure:
-   - **Framework Preset**: Next.js (auto-detected)
-   - **Root Directory**: `frontend` (or leave blank if using vercel.json)
-   - **Build Command**: Leave default (handled by vercel.json)
-   - **Output Directory**: Leave default
+4. **IMPORTANT**: Configure Root Directory:
+   - **Root Directory**: Set to `frontend` (this is required!)
+   - **Framework Preset**: Next.js (will auto-detect after setting root)
+   - **Build Command**: Leave default (auto-detected)
+   - **Output Directory**: Leave default (auto-detected)
 5. Add environment variable:
    ```
    NEXT_PUBLIC_API_URL=<your-backend-url>
@@ -89,6 +89,8 @@ alembic upgrade head
 6. Click **Deploy**
 7. Wait for deployment (~2 minutes)
 8. Your site will be live at `https://your-project.vercel.app`
+
+**Note**: If you get "No Next.js version detected" error, make sure Root Directory is set to `frontend` in project settings.
 
 #### Via Vercel CLI:
 

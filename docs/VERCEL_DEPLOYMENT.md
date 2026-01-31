@@ -159,15 +159,11 @@ services:
 
 ### Step 2: Frontend Vercel Configuration
 
-#### Create `vercel.json`:
+#### `vercel.json` (located in `frontend/` directory):
 
 ```json
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "outputDirectory": "frontend/.next",
-  "installCommand": "cd frontend && npm install",
-  "framework": "nextjs",
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -195,6 +191,8 @@ services:
   ]
 }
 ```
+
+**Note**: Vercel will auto-detect Next.js and handle build/install commands automatically when Root Directory is set to `frontend`.
 
 #### Update `next.config.ts`:
 
