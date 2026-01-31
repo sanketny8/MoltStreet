@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Test script to test Supabase connection with psycopg2.
+Test script to test Supabase connection with psycopg2 and asyncpg.
 """
 
-if __name__ == "__main__":
-    import psycopg2
+import asyncio
+import ssl
+import socket
+from urllib.parse import urlparse, unquote
 
-    # Simple connection test
-    conn = psycopg2.connect(
-        'postgresql://postgres.iwjrbvfnwneysnbnourt:QmbKLuyQ8pGaKqc2@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres?sslmode=require'
-    )
-    print('SUCCESS! Connection works!')
-    conn.close()
+# Test connection URL
+TEST_URL = 'postgresql://postgres.iwjrbvfnwneysnbnourt:QmbKLuyQ8pGaKqc2@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres?sslmode=require'
 
+
+def parse_and_display_url(url: str):
     """Parse and display URL components for debugging."""
     print("\n" + "=" * 60)
     print("CONNECTION STRING ANALYSIS")
@@ -35,8 +35,8 @@ if __name__ == "__main__":
     issues = []
 
     # Check driver
-    if parsed.scheme != "postgresql+asyncpg":
-        issues.append(f"Driver should be 'postgresql+asyncpg', got '{parsed.scheme}'")
+    if parsed.scheme != "postgresql":
+        issues.append(f"Expected scheme 'postgresql', got '{parsed.scheme}'")
 
     # Check port
     if parsed.port == 5432:
@@ -63,6 +63,42 @@ if __name__ == "__main__":
         print("\n✓ No obvious URL format issues detected")
 
     return parsed
+
+
+def test_psycopg2_connection(url: str):
+    """Test connection using psycopg2 (synchronous)."""
+    print("\n" + "=" * 60)
+    print("TEST 0: psycopg2 Connection Test")
+    print("=" * 60)
+
+    try:
+        import psycopg2
+    except ImportError:
+        print("❌ psycopg2 not installed. Run: pip install psycopg2-binary")
+        return False
+
+    try:
+        print("\n   Attempting connection...")
+        conn = psycopg2.connect(url)
+        print('   ✓ SUCCESS! Connection works!')
+        
+        # Test query
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        print(f"   ✓ Test query returned: {result[0]}")
+        
+        # Get server version
+        cursor.execute("SELECT version()")
+        version = cursor.fetchone()[0]
+        print(f"   ✓ PostgreSQL version: {version[:60]}...")
+        
+        cursor.close()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"   ❌ Connection failed: {type(e).__name__}: {str(e)[:100]}")
+        return False
 
 
 async def test_raw_connection_with_options(url: str):
@@ -277,6 +313,9 @@ async def main():
     # Run tests
     results = {}
 
+    # Test psycopg2 connection (synchronous)
+    results['psycopg2'] = test_psycopg2_connection(TEST_URL)
+
     # Test DNS
     results['dns'] = await test_dns_resolution(parsed.hostname)
 
@@ -309,10 +348,10 @@ async def main():
         status = "✓" if result else "❌"
         print(f"   {status} {name}")
 
-    if results.get('asyncpg'):
+    if results.get('psycopg2') or results.get('asyncpg'):
         print("\n✓ Connection works! Update your .env file with:")
         print(f"DATABASE_URL={TEST_URL}")
-    elif results.get('dns') and results.get('port') and not results.get('asyncpg'):
+    elif results.get('dns') and results.get('port') and not (results.get('psycopg2') or results.get('asyncpg')):
         print("\n❌ Network is reachable but database connection fails.")
         print("   Most likely cause: SUPABASE PROJECT IS PAUSED")
         print("   → Go to https://supabase.com/dashboard and restore your project")

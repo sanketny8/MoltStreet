@@ -90,7 +90,7 @@ async def get_moderator_stats(
     markets_resolved = reward_data[3] or 0
 
     # Get pending markets count (closed but not resolved, past deadline)
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     pending_result = await session.execute(
         select(func.count(Market.id))
         .where(Market.status.in_([MarketStatus.OPEN, MarketStatus.CLOSED]))
@@ -116,7 +116,7 @@ async def get_pending_markets(
     session: AsyncSession = Depends(get_session)
 ):
     """Get markets that are past their deadline and awaiting resolution."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     result = await session.execute(
         select(Market)

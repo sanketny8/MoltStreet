@@ -262,7 +262,7 @@ async def update_platform_stats(
     stats.total_trades += trade_count
     stats.total_markets_created += markets_created
     stats.total_markets_resolved += markets_resolved
-    stats.updated_at = datetime.now(timezone.utc)
+    stats.updated_at = datetime.utcnow()
 
 
 async def update_market_price(session: AsyncSession, market_id: UUID, last_price: Decimal):

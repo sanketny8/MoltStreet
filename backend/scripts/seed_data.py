@@ -7,6 +7,7 @@ Run with: python -m scripts.seed_data
 import asyncio
 import random
 from datetime import datetime, timedelta, timezone
+import time
 from decimal import Decimal
 from uuid import uuid4
 
@@ -23,18 +24,47 @@ from server.models.trade import Trade
 from server.models.wallet import AgentWallet, Transaction, TransactionType, TransactionStatus
 
 
-# Database URL - using SQLite for local testing
-import os
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
-DB_PATH = os.path.join(BACKEND_DIR, "moltstreet.db")
-DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+# Use database URL from config (supports both SQLite and Supabase)
+from server.config import settings
+import ssl
+
+DATABASE_URL = settings.DATABASE_URL
 
 
 async def create_engine_and_session():
-    engine = create_async_engine(DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    # Handle SSL for PostgreSQL/Supabase connections
+    connect_args = {}
+    engine_kwargs = {"echo": False}
+    
+    if DATABASE_URL.startswith("postgresql"):
+        # Supabase/PostgreSQL requires SSL
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        connect_args = {
+            "ssl": ssl_context,
+            "timeout": 60,
+            "command_timeout": 60,
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            # Force timezone to UTC for asyncpg
+        }
+        from sqlalchemy.pool import NullPool
+        engine_kwargs["poolclass"] = NullPool
+    elif DATABASE_URL.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+        engine_kwargs["pool_pre_ping"] = True
+    
+    engine = create_async_engine(
+        DATABASE_URL,
+        connect_args=connect_args,
+        **engine_kwargs
+    )
+    
+    # Only create tables if using SQLite (for Supabase, use migrations)
+    if DATABASE_URL.startswith("sqlite"):
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
 
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     return engine, async_session
@@ -72,6 +102,8 @@ async def seed_agents(session: AsyncSession) -> list[Agent]:
             agents.append(existing)
             continue
 
+        # Use timezone-naive UTC datetime (asyncpg compatibility)
+        created_at = datetime.utcnow() - timedelta(days=random.randint(1, 30))
         agent = Agent(
             id=uuid4(),
             name=data["name"],
@@ -79,7 +111,7 @@ async def seed_agents(session: AsyncSession) -> list[Agent]:
             balance=data["balance"],
             locked_balance=Decimal("0.00"),
             reputation=data["reputation"],
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(1, 30))
+            created_at=created_at
         )
         session.add(agent)
         agents.append(agent)
@@ -279,7 +311,7 @@ async def seed_markets(session: AsyncSession, agents: list[Agent]) -> list[Marke
             continue
 
         creator = random.choice(agents)
-        deadline = datetime.now(timezone.utc) + timedelta(days=data["days_until_deadline"])
+        deadline = datetime.utcnow() + timedelta(days=data["days_until_deadline"])
 
         is_resolved = data["status"] == MarketStatus.RESOLVED
         market = Market(
@@ -294,10 +326,10 @@ async def seed_markets(session: AsyncSession, agents: list[Agent]) -> list[Marke
             no_price=Decimal("1.00") - data["yes_price"],
             volume=Decimal(str(random.randint(100, 5000))),
             outcome=data.get("outcome"),
-            resolved_at=datetime.now(timezone.utc) - timedelta(days=abs(data["days_until_deadline"])) if is_resolved else None,
+            resolved_at=datetime.utcnow() - timedelta(days=abs(data["days_until_deadline"])) if is_resolved else None,
             resolved_by=moderator.id if is_resolved else None,
             resolution_evidence=f"Market resolved based on verified outcome." if is_resolved else None,
-            created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(5, 60))
+            created_at=datetime.utcnow() - timedelta(days=random.randint(5, 60))
         )
         session.add(market)
         markets.append(market)
@@ -315,6 +347,7 @@ async def seed_orders_and_trades(session: AsyncSession, agents: list[Agent], mar
 
     orders_created = 0
     trades_created = 0
+    all_orders = []  # Store all created orders
 
     for market in open_markets:
         # Create 5-15 orders per market
@@ -352,22 +385,37 @@ async def seed_orders_and_trades(session: AsyncSession, agents: list[Agent], mar
                 size=size,
                 filled=filled,
                 status=status,
-                created_at=datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 72))
+                created_at=datetime.utcnow() - timedelta(hours=random.randint(1, 72))
             )
             session.add(order)
+            all_orders.append(order)
             orders_created += 1
 
     await session.commit()
+    await session.flush()  # Ensure orders are persisted
     print(f"Created {orders_created} orders")
 
-    # Create some trades
+    # Create some trades using actual order IDs
     for market in open_markets:
-        # Create 3-10 trades per market
-        num_trades = random.randint(3, 10)
+        # Get orders for this market
+        market_orders = [o for o in all_orders if o.market_id == market.id]
+        if len(market_orders) < 2:
+            continue  # Need at least 2 orders to create a trade
+        
+        # Create trades (up to half the number of orders, minimum 1)
+        max_trades = max(1, len(market_orders) // 2)
+        num_trades = random.randint(1, min(10, max_trades))
 
         for _ in range(num_trades):
-            buyer = random.choice(agents)
-            seller = random.choice([a for a in agents if a.id != buyer.id])
+            # Pick two different orders
+            buy_order = random.choice(market_orders)
+            sell_order = random.choice([o for o in market_orders if o.id != buy_order.id and o.side != buy_order.side])
+            
+            if not sell_order:
+                continue  # Skip if no matching sell order
+
+            buyer = next(a for a in agents if a.id == buy_order.agent_id)
+            seller = next(a for a in agents if a.id == sell_order.agent_id)
 
             price = float(market.yes_price) + random.uniform(-0.10, 0.10)
             price = max(0.05, min(0.95, price))
@@ -382,8 +430,8 @@ async def seed_orders_and_trades(session: AsyncSession, agents: list[Agent], mar
             trade = Trade(
                 id=uuid4(),
                 market_id=market.id,
-                buy_order_id=uuid4(),  # Placeholder
-                sell_order_id=uuid4(),  # Placeholder
+                buy_order_id=buy_order.id,
+                sell_order_id=sell_order.id,
                 buyer_id=buyer.id,
                 seller_id=seller.id,
                 side=Side.YES,
@@ -392,7 +440,7 @@ async def seed_orders_and_trades(session: AsyncSession, agents: list[Agent], mar
                 buyer_fee=buyer_fee,
                 seller_fee=seller_fee,
                 total_fee=total_fee,
-                created_at=datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 168))
+                created_at=datetime.utcnow() - timedelta(hours=random.randint(1, 168))
             )
             session.add(trade)
             trades_created += 1
@@ -436,8 +484,8 @@ async def seed_positions(session: AsyncSession, agents: list[Agent], markets: li
                 no_shares=no_shares,
                 avg_yes_price=Decimal(str(round(random.uniform(0.3, 0.7), 2))) if yes_shares > 0 else None,
                 avg_no_price=Decimal(str(round(random.uniform(0.3, 0.7), 2))) if no_shares > 0 else None,
-                created_at=datetime.now(timezone.utc) - timedelta(days=random.randint(1, 30)),
-                updated_at=datetime.now(timezone.utc) - timedelta(hours=random.randint(1, 72))
+                created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
+                updated_at=datetime.utcnow() - timedelta(hours=random.randint(1, 72))
             )
             session.add(position)
             positions_created += 1
@@ -460,18 +508,24 @@ async def seed_wallets(session: AsyncSession, agents: list[Agent]):
         if existing:
             continue
 
-        # Create wallet
+        # Create wallet - use timezone-naive datetime
+        agent_created = agent.created_at if hasattr(agent, 'created_at') and agent.created_at else datetime.utcnow()
+        # Convert timezone-aware to naive if needed
+        if hasattr(agent_created, 'tzinfo') and agent_created.tzinfo is not None:
+            agent_created = agent_created.replace(tzinfo=None)
+        
         wallet = AgentWallet(
             agent_id=agent.id,
             internal_address=AgentWallet.generate_internal_address(agent.id),
-            created_at=agent.created_at,
-            updated_at=datetime.now(timezone.utc),
+            created_at=agent_created,
+            updated_at=datetime.utcnow(),
         )
         session.add(wallet)
         await session.flush()  # Get wallet ID
         wallets_created += 1
 
-        # Create initial deposit transaction
+        # Create initial deposit transaction - use timezone-naive datetime
+        deposit_created_at = agent_created  # Use the same timezone-naive datetime from wallet
         deposit_tx = Transaction(
             wallet_id=wallet.id,
             agent_id=agent.id,
@@ -480,7 +534,7 @@ async def seed_wallets(session: AsyncSession, agents: list[Agent]):
             amount=Decimal("1000.00"),  # Initial deposit
             balance_after=Decimal("1000.00"),
             description="Initial deposit",
-            created_at=agent.created_at,
+            created_at=deposit_created_at,
         )
         session.add(deposit_tx)
         transactions_created += 1
@@ -508,6 +562,12 @@ async def seed_wallets(session: AsyncSession, agents: list[Agent]):
 
             current_balance += amount
 
+            # Use wallet created_at as base, or current time
+            base_time = wallet.created_at if hasattr(wallet, 'created_at') and wallet.created_at else datetime.utcnow()
+            if hasattr(base_time, 'tzinfo') and base_time.tzinfo is not None:
+                base_time = base_time.replace(tzinfo=None)
+            tx_created_at = base_time + timedelta(hours=random.randint(1, 720))
+            
             tx = Transaction(
                 wallet_id=wallet.id,
                 agent_id=agent.id,
@@ -516,7 +576,7 @@ async def seed_wallets(session: AsyncSession, agents: list[Agent]):
                 amount=amount,
                 balance_after=current_balance,
                 description=f"{'Trade purchase' if tx_type == TransactionType.TRADE_BUY else 'Trade sale' if tx_type == TransactionType.TRADE_SELL else 'Market win' if tx_type == TransactionType.TRADE_WIN else 'Trading fee'}",
-                created_at=agent.created_at + timedelta(hours=random.randint(1, 720)),
+                created_at=tx_created_at
             )
             session.add(tx)
             transactions_created += 1

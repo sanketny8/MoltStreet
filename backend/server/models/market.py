@@ -48,4 +48,4 @@ class Market(SQLModel, table=True):
     resolved_at: Optional[datetime] = Field(default=None)
     resolved_by: Optional[UUID] = Field(default=None, foreign_key="agents.id")
     resolution_evidence: Optional[str] = Field(default=None, max_length=2000)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

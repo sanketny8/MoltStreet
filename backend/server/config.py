@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./moltstreet.db"
     SECRET_KEY: str = "dev-secret-change-in-production"
     ENVIRONMENT: str = "development"
+    CORS_ORIGINS: str = "*"  # Comma-separated list of allowed origins, or "*" for all
 
     # Platform fee settings
     TRADING_FEE_RATE: Decimal = Decimal("0.01")  # 1% trading fee

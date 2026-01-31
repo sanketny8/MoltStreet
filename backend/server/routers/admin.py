@@ -162,7 +162,7 @@ async def get_fee_summary(
     _: bool = Depends(verify_admin_key)
 ):
     """Get fee summary by type for the last N days."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Get fees by type
     result = await session.execute(
@@ -529,5 +529,5 @@ async def admin_health_check(
         "status": "ok" if db_status == "healthy" else "degraded",
         "database": db_status,
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.utcnow().isoformat()
     }

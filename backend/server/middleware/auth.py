@@ -142,7 +142,7 @@ async def check_rate_limit(
 
     Raises HTTPException if rate limit exceeded.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     # Reset counters if needed
     if agent.last_request_reset is None or (now - agent.last_request_reset).total_seconds() >= 60:

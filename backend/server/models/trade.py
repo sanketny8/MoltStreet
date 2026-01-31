@@ -26,4 +26,4 @@ class Trade(SQLModel, table=True):
     buyer_fee: Decimal = Field(default=Decimal("0.00"))
     seller_fee: Decimal = Field(default=Decimal("0.00"))
     total_fee: Decimal = Field(default=Decimal("0.00"))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

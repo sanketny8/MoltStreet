@@ -48,8 +48,8 @@ class AgentWallet(SQLModel, table=True):
     chain_id: Optional[int] = Field(default=None)  # e.g., 8453 for Base
 
     # Timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     @staticmethod
     def generate_internal_address(agent_id: UUID) -> str:
@@ -85,4 +85,4 @@ class Transaction(SQLModel, table=True):
     description: Optional[str] = Field(default=None, max_length=500)
 
     # Timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -18,8 +18,8 @@ class Position(SQLModel, table=True):
     no_shares: int = Field(default=0)
     avg_yes_price: Optional[Decimal] = Field(default=None)
     avg_no_price: Optional[Decimal] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         # Unique constraint on agent_id + market_id

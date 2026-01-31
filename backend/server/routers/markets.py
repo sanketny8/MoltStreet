@@ -35,7 +35,7 @@ async def create_market(
     creation_fee = settings.MARKET_CREATION_FEE
 
     # Validate deadline is in the future
-    if data.deadline <= datetime.now(timezone.utc):
+    if data.deadline <= datetime.utcnow():
         raise HTTPException(status_code=400, detail="Deadline must be in the future")
 
     # Get creator and check balance

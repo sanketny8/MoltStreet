@@ -1,0 +1,25 @@
+# Ignore backend files from Vercel deployment
+backend/
+*.db
+*.sqlite
+*.sqlite3
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+.env
+.env.local
+.env.*.local
+logs/
+*.log
+node_modules/
+.DS_Store
+*.md
+docs/
+scripts/
+alembic/
+*.ini
+

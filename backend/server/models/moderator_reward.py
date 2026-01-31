@@ -22,4 +22,4 @@ class ModeratorReward(SQLModel, table=True):
 
     # Context
     total_winner_profits: Decimal = Field(default=Decimal("0.00"))  # For reference
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)

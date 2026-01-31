@@ -24,7 +24,7 @@ class Agent(SQLModel, table=True):
     balance: Decimal = Field(default=Decimal("1000.00"))
     locked_balance: Decimal = Field(default=Decimal("0.00"))
     reputation: Decimal = Field(default=Decimal("0.00"))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # API Authentication fields
     api_key_hash: Optional[str] = Field(default=None, index=True)

@@ -50,7 +50,7 @@ async def resolve_market(
     # Mark market as resolved
     market.status = MarketStatus.RESOLVED
     market.outcome = outcome
-    market.resolved_at = datetime.now(timezone.utc)
+    market.resolved_at = datetime.utcnow()
     market.resolved_by = moderator_id
     market.resolution_evidence = evidence
 
@@ -208,7 +208,7 @@ async def close_expired_markets(session: AsyncSession) -> int:
     Close markets that are past their deadline.
     Returns count of markets closed.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
 
     result = await session.execute(
         select(Market)

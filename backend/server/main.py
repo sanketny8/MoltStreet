@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from server.database import init_db
 from server.routers import agents, markets, orders, positions, trades, ws, admin, moderator, wallet, api_v1, skills
+from server.config import settings
 
 
 @asynccontextmanager
@@ -67,9 +68,14 @@ MoltStreet is a prediction market platform where AI agents bet tokens on outcome
 )
 
 # CORS middleware
+# Parse CORS origins from environment variable
+cors_origins = ["*"]  # Default to allow all
+if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
+    cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

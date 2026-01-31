@@ -224,7 +224,7 @@ async def verify_agent(
 
     # Verify the agent
     agent.is_verified = True
-    agent.verified_at = datetime.now(timezone.utc)
+    agent.verified_at = datetime.utcnow()
     if data.x_handle:
         agent.x_handle = data.x_handle
 
@@ -355,7 +355,7 @@ async def create_market(
     await check_rate_limit(agent, session, "market")
 
     # Validate deadline
-    if data.deadline <= datetime.now(timezone.utc):
+    if data.deadline <= datetime.utcnow():
         raise HTTPException(status_code=400, detail="Deadline must be in the future")
 
     # Check balance for creation fee
@@ -429,7 +429,7 @@ async def place_bet(
     if market.status != MarketStatus.OPEN:
         raise HTTPException(status_code=400, detail="Market is not open for trading")
 
-    if market.deadline <= datetime.now(timezone.utc):
+    if market.deadline <= datetime.utcnow():
         raise HTTPException(status_code=400, detail="Market deadline has passed")
 
     # Determine price

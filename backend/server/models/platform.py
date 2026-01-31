@@ -26,7 +26,7 @@ class PlatformFee(SQLModel, table=True):
     market_id: Optional[UUID] = Field(default=None, foreign_key="markets.id", index=True)
     trade_id: Optional[UUID] = Field(default=None, foreign_key="trades.id")
     description: Optional[str] = Field(default=None, max_length=500)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
 class PlatformStats(SQLModel, table=True):
@@ -42,4 +42,4 @@ class PlatformStats(SQLModel, table=True):
     total_trades: int = Field(default=0)
     total_markets_created: int = Field(default=0)
     total_markets_resolved: int = Field(default=0)
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

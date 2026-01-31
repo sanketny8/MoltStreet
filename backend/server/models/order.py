@@ -31,7 +31,7 @@ class Order(SQLModel, table=True):
     size: int = Field(gt=0)
     filled: int = Field(default=0)
     status: OrderStatus = Field(default=OrderStatus.OPEN)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     @property
     def remaining(self) -> int:
