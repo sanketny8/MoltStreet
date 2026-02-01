@@ -3,6 +3,8 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
+from sqlalchemy import Column
+from sqlalchemy import Enum as SQLEnum
 from sqlmodel import Field, SQLModel
 
 
@@ -36,7 +38,12 @@ class Order(SQLModel, table=True):
     agent_id: UUID = Field(foreign_key="agents.id", index=True)
     market_id: UUID = Field(foreign_key="markets.id", index=True)
     side: Side  # YES or NO
-    order_type: OrderType = Field(default=OrderType.BUY)  # BUY or SELL
+    order_type: OrderType = Field(
+        default=OrderType.BUY,
+        sa_column=Column(
+            SQLEnum("buy", "sell", name="ordertype", native_enum=True, create_constraint=False)
+        ),
+    )  # BUY or SELL
     price: Decimal = Field(ge=Decimal("0.01"), le=Decimal("0.99"))
     size: int = Field(gt=0)
     filled: int = Field(default=0)
