@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 def get_future_deadline() -> str:
     """Get a valid ISO format deadline string for 1 day in the future."""
-    return (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=1)).isoformat()
 
 
 @pytest.mark.asyncio
@@ -18,21 +18,23 @@ async def test_place_order(client: AsyncClient):
 
     # Create market
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Test market for orders",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={"creator_id": agent_id, "question": "Test market for orders", "deadline": deadline},
+    )
     market_id = market_response.json()["id"]
 
     # Place order
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.55,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.55,
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -54,30 +56,35 @@ async def test_order_matching(client: AsyncClient):
 
     # Create market (by agent1)
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Test matching market",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={"creator_id": agent1_id, "question": "Test matching market", "deadline": deadline},
+    )
     market_id = market_response.json()["id"]
 
     # Agent1 places YES order @ 0.60
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
 
     # Agent2 places NO order @ 0.40 (matches because 0.60 + 0.40 = 1.0)
-    response = await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -94,21 +101,27 @@ async def test_insufficient_balance_order(client: AsyncClient):
 
     # Create market
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Test insufficient balance market",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Test insufficient balance market",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Try to place huge order
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.99,
-        "size": 10000  # Way too big
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.99,
+            "size": 10000,  # Way too big
+        },
+    )
 
     assert response.status_code == 400
     assert "Insufficient balance" in response.json()["detail"]
@@ -122,21 +135,23 @@ async def test_cancel_order(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Test cancel market",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={"creator_id": agent_id, "question": "Test cancel market", "deadline": deadline},
+    )
     market_id = market_response.json()["id"]
 
     # Place order
-    order_response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    order_response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
     order_id = order_response.json()["order"]["id"]
 
     # Cancel order

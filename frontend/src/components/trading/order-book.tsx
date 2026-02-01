@@ -18,8 +18,8 @@ export function OrderBook({ orderBook, loading }: OrderBookProps) {
     )
   }
 
-  const bids = orderBook?.bids || []
-  const asks = orderBook?.asks || []
+  const bids = (orderBook?.bids || []).filter(b => b && typeof b.price === 'number')
+  const asks = (orderBook?.asks || []).filter(a => a && typeof a.price === 'number')
 
   if (bids.length === 0 && asks.length === 0) {
     return (
@@ -30,14 +30,14 @@ export function OrderBook({ orderBook, loading }: OrderBookProps) {
   }
 
   const maxSize = Math.max(
-    ...bids.map(b => b.size),
-    ...asks.map(a => a.size),
+    ...bids.map(b => b.size || 0),
+    ...asks.map(a => a.size || 0),
     1
   )
 
-  // Use backend-provided spread or calculate fallback
-  const bestBid = orderBook?.best_bid ?? bids[0]?.price ?? 0
-  const bestAsk = orderBook?.best_ask ?? asks[0]?.price ?? 1
+  // Use backend-provided spread or calculate fallback with safe access
+  const bestBid = orderBook?.best_bid ?? (bids.length > 0 && bids[0]?.price != null ? bids[0].price : 0)
+  const bestAsk = orderBook?.best_ask ?? (asks.length > 0 && asks[0]?.price != null ? asks[0].price : 1)
   const spread = orderBook?.spread ?? (bestAsk - bestBid)
   const midPrice = orderBook?.mid_price ?? ((bestBid + bestAsk) / 2)
   const spreadPercent = bestBid > 0 ? ((spread / bestBid) * 100).toFixed(1) : "0"
@@ -51,29 +51,33 @@ export function OrderBook({ orderBook, loading }: OrderBookProps) {
         <span className="text-right">Total</span>
       </div>
 
-      {/* Asks (Sell orders) - reversed to show highest at top */}
+      {/* Asks (SELL orders for YES shares) - reversed to show highest at top */}
       <div className="space-y-1">
-        <p className="text-xs text-gray-400 mb-2">Asks (Sell YES)</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-gray-400">Asks - Selling YES</p>
+          <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded">SELL</span>
+        </div>
         {asks.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-2">No asks</p>
         ) : (
           [...asks].reverse().map((ask, i) => {
-            const widthPercent = (ask.size / maxSize) * 100
-            const cumulative = asks.slice(0, asks.length - i).reduce((sum, a) => sum + a.size, 0)
+            if (!ask || typeof ask.price !== 'number') return null
+            const widthPercent = ((ask.size || 0) / maxSize) * 100
+            const cumulative = asks.slice(0, asks.length - i).reduce((sum, a) => sum + (a?.size || 0), 0)
             return (
-              <div key={`ask-${ask.price}`} className="relative">
+              <div key={`ask-${ask.price}-${i}`} className="relative">
                 <div
                   className="absolute right-0 top-0 bottom-0 bg-red-50"
                   style={{ width: `${widthPercent}%` }}
                 />
                 <div className="relative grid grid-cols-3 py-1 text-sm">
                   <span className="text-red-600 font-mono">{(ask.price * 100).toFixed(0)}¢</span>
-                  <span className="text-center font-mono">{ask.size}</span>
+                  <span className="text-center font-mono">{ask.size || 0}</span>
                   <span className="text-right text-gray-500 font-mono">{cumulative}</span>
                 </div>
               </div>
             )
-          })
+          }).filter(Boolean)
         )}
       </div>
 
@@ -97,29 +101,33 @@ export function OrderBook({ orderBook, loading }: OrderBookProps) {
         </div>
       </div>
 
-      {/* Bids (Buy orders) */}
+      {/* Bids (BUY orders for YES shares) */}
       <div className="space-y-1">
-        <p className="text-xs text-gray-400 mb-2">Bids (Buy YES)</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs text-gray-400">Bids - Buying YES</p>
+          <span className="text-[10px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded">BUY</span>
+        </div>
         {bids.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-2">No bids</p>
         ) : (
           bids.map((bid, i) => {
-            const widthPercent = (bid.size / maxSize) * 100
-            const cumulative = bids.slice(0, i + 1).reduce((sum, b) => sum + b.size, 0)
+            if (!bid || typeof bid.price !== 'number') return null
+            const widthPercent = ((bid.size || 0) / maxSize) * 100
+            const cumulative = bids.slice(0, i + 1).reduce((sum, b) => sum + (b?.size || 0), 0)
             return (
-              <div key={`bid-${bid.price}`} className="relative">
+              <div key={`bid-${bid.price}-${i}`} className="relative">
                 <div
                   className="absolute left-0 top-0 bottom-0 bg-green-50"
                   style={{ width: `${widthPercent}%` }}
                 />
                 <div className="relative grid grid-cols-3 py-1 text-sm">
                   <span className="text-green-600 font-mono">{(bid.price * 100).toFixed(0)}¢</span>
-                  <span className="text-center font-mono">{bid.size}</span>
+                  <span className="text-center font-mono">{bid.size || 0}</span>
                   <span className="text-right text-gray-500 font-mono">{cumulative}</span>
                 </div>
               </div>
             )
-          })
+          }).filter(Boolean)
         )}
       </div>
     </div>

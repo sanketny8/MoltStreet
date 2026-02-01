@@ -1,10 +1,8 @@
 """Authentication middleware for API key validation."""
 
-from datetime import datetime, timezone
-from typing import Optional
-from uuid import UUID
+from datetime import datetime
 
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -14,8 +12,8 @@ from server.utils.api_key import hash_api_key, validate_api_key_format
 
 
 async def get_api_key(
-    authorization: Optional[str] = Header(None, alias="Authorization")
-) -> Optional[str]:
+    authorization: str | None = Header(None, alias="Authorization"),
+) -> str | None:
     """
     Extract API key from Authorization header.
 
@@ -32,8 +30,7 @@ async def get_api_key(
 
 
 async def get_current_agent(
-    api_key: Optional[str] = Depends(get_api_key),
-    session: AsyncSession = Depends(get_session)
+    api_key: str | None = Depends(get_api_key), session: AsyncSession = Depends(get_session)
 ) -> Agent:
     """
     Validate API key and return the authenticated agent.
@@ -48,44 +45,51 @@ async def get_current_agent(
         raise HTTPException(
             status_code=401,
             detail="Missing API key. Include 'Authorization: Bearer mst_...' header.",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not validate_api_key_format(api_key):
         raise HTTPException(
             status_code=401,
             detail="Invalid API key format.",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     # Hash the provided key and look it up
     key_hash = hash_api_key(api_key)
 
-    result = await session.execute(
-        select(Agent).where(Agent.api_key_hash == key_hash)
-    )
+    result = await session.execute(select(Agent).where(Agent.api_key_hash == key_hash))
     agent = result.scalar_one_or_none()
 
     if not agent:
         raise HTTPException(
-            status_code=401,
-            detail="Invalid API key.",
-            headers={"WWW-Authenticate": "Bearer"}
+            status_code=401, detail="Invalid API key.", headers={"WWW-Authenticate": "Bearer"}
         )
 
     if not agent.is_verified:
         raise HTTPException(
             status_code=403,
-            detail="Agent not verified. Complete verification at your claim URL first."
+            detail="Agent not verified. Complete verification at your claim URL first.",
         )
+
+    # Check if API key is revoked
+    if agent.api_key_revoked_at is not None:
+        raise HTTPException(
+            status_code=401,
+            detail="API key has been revoked. Please regenerate a new key.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Update last used timestamp
+    agent.api_key_last_used_at = datetime.utcnow()
+    await session.commit()
 
     return agent
 
 
 async def get_current_agent_optional(
-    api_key: Optional[str] = Depends(get_api_key),
-    session: AsyncSession = Depends(get_session)
-) -> Optional[Agent]:
+    api_key: str | None = Depends(get_api_key), session: AsyncSession = Depends(get_session)
+) -> Agent | None:
     """
     Optionally validate API key. Returns None if no key provided.
     Useful for endpoints that work with or without auth.
@@ -99,38 +103,31 @@ async def get_current_agent_optional(
         return None
 
 
-async def get_current_trader(
-    agent: Agent = Depends(get_current_agent)
-) -> Agent:
+async def get_current_trader(agent: Agent = Depends(get_current_agent)) -> Agent:
     """
     Get authenticated agent and verify they are a trader (not moderator).
     """
     if not agent.can_trade:
         raise HTTPException(
             status_code=403,
-            detail="Only trader agents can perform this action. Moderators cannot trade."
+            detail="Only trader agents can perform this action. Moderators cannot trade.",
         )
     return agent
 
 
-async def get_current_moderator(
-    agent: Agent = Depends(get_current_agent)
-) -> Agent:
+async def get_current_moderator(agent: Agent = Depends(get_current_agent)) -> Agent:
     """
     Get authenticated agent and verify they are a moderator.
     """
     if not agent.can_resolve:
         raise HTTPException(
-            status_code=403,
-            detail="Only moderator agents can perform this action."
+            status_code=403, detail="Only moderator agents can perform this action."
         )
     return agent
 
 
 async def check_rate_limit(
-    agent: Agent,
-    session: AsyncSession,
-    limit_type: str = "general"
+    agent: Agent, session: AsyncSession, limit_type: str = "general"
 ) -> None:
     """
     Check and update rate limits for an agent.
@@ -159,7 +156,7 @@ async def check_rate_limit(
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded. Maximum 50 requests per minute.",
-                headers={"Retry-After": "60"}
+                headers={"Retry-After": "60"},
             )
         agent.requests_this_minute += 1
 
@@ -168,7 +165,7 @@ async def check_rate_limit(
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded. Maximum 10 orders per minute.",
-                headers={"Retry-After": "60"}
+                headers={"Retry-After": "60"},
             )
         agent.requests_this_minute += 1
 
@@ -177,7 +174,7 @@ async def check_rate_limit(
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded. Maximum 1 market creation per hour.",
-                headers={"Retry-After": "3600"}
+                headers={"Retry-After": "3600"},
             )
         agent.markets_created_today += 1
 

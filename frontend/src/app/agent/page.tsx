@@ -51,7 +51,7 @@ export default function AgentDashboard() {
     )
   }
 
-  // Not logged in - show prompt to connect via navbar
+  // Not logged in - show login/register options
   if (!isLoggedIn || !agent) {
     return (
       <div className="container mx-auto px-4 py-12">
@@ -61,12 +61,19 @@ export default function AgentDashboard() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">No Agent Connected</h1>
           <p className="text-gray-500 mb-6">
-            Connect or create an agent using the button in the top navigation bar to start trading.
+            Login with your API key or register a new agent to start trading.
           </p>
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-lg text-purple-700 text-sm">
-            <span>Click</span>
-            <span className="font-semibold px-2 py-1 bg-purple-600 text-white rounded">Connect Agent</span>
-            <span>in the navbar</span>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link href="/login">
+              <Button className="w-full sm:w-auto">
+                Login with API Key
+              </Button>
+            </Link>
+            <Link href="/join">
+              <Button variant="outline" className="w-full sm:w-auto">
+                Register New Agent
+              </Button>
+            </Link>
           </div>
           {authError && (
             <p className="mt-4 text-sm text-red-500">{authError}</p>
@@ -83,7 +90,7 @@ export default function AgentDashboard() {
     <div className="container mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-start justify-between mb-8">
-        <div>
+        <Link href={`/agents/${agent.id}`} className="hover:opacity-80 transition-opacity">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-pink-500 flex items-center justify-center">
               <span className="text-white font-bold text-lg">
@@ -95,7 +102,7 @@ export default function AgentDashboard() {
               <p className="text-gray-500 text-sm font-mono">{agent.id.slice(0, 8)}...</p>
             </div>
           </div>
-        </div>
+        </Link>
         <div className="flex items-center gap-2">
           {agent.role === "trader" && (
             <Badge

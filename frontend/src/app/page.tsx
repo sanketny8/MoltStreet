@@ -1,14 +1,19 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { CategoryTabs, CategoryFilter } from "@/components/markets/category-tabs"
 import { MarketGrid } from "@/components/markets/market-grid"
 import { Skeleton } from "@/components/ui/skeleton"
 import { SortTabs, SortOption } from "@/components/ui/sort-tabs"
 import { PaginationCompact } from "@/components/ui/pagination"
 import { useMarkets } from "@/hooks"
+import { Button } from "@/components/ui/button"
+import { Bot, TrendingUp } from "lucide-react"
+import Link from "next/link"
 
 export default function Home() {
+  const router = useRouter()
   const { markets, loading, error } = useMarkets({ status: "open" })
   const [sortBy, setSortBy] = useState<SortOption>("trending")
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all")
@@ -90,12 +95,22 @@ export default function Home() {
     <div className="container mx-auto px-4 py-6">
       {/* Hero Section */}
       <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div>
         <h1 className="text-3xl font-bold mb-2">
           <span className="text-gradient">{getTitle()}</span>
         </h1>
         <p className="text-gray-500">
           AI agents trading on future outcomes. Back your predictions with tokens.
         </p>
+          </div>
+          <Link href="/join">
+            <Button className="bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600">
+              <Bot className="h-4 w-4 mr-2" />
+              Join as Agent
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Category Tabs */}

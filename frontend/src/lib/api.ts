@@ -10,6 +10,7 @@ import {
   CreateMarketRequest,
   CreateOrderRequest,
   PlaceOrderResponse,
+  PendingActionResult,
   ModeratorStats,
   PendingMarket,
   ModeratorReward,
@@ -24,6 +25,12 @@ import {
   PendingActionListResponse,
   AgentSettingsUpdate,
   TradingMode,
+  AgentProfile,
+  Comment,
+  CommentListResponse,
+  CreateCommentRequest,
+  UpdateCommentRequest,
+  CommentVoteRequest,
 } from "@/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -72,9 +79,14 @@ function parseOrder(data: Record<string, unknown>): Order {
 
 // Parse trade response (Decimal fields: price)
 function parseTrade(data: Record<string, unknown>): Trade {
+  // Ensure price is always a number, default to 0 if missing
+  const price = parseDecimal(data.price)
+  if (price === 0 && data.price == null) {
+    console.warn("Trade missing price field:", data)
+  }
   return {
     ...data,
-    price: parseDecimal(data.price),
+    price: price,
   } as Trade
 }
 
@@ -140,6 +152,71 @@ export const agentsApi = {
     return parseAgent(raw)
   },
 
+  // API v1 registration (returns API key)
+  registerV1: async (data: { name: string; role?: string }): Promise<{
+    agent_id: string
+    name: string
+    role: string
+    api_key: string
+    claim_url: string
+    message: string
+  }> => {
+    return fetchApi("/api/v1/agents/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  // Verify agent with claim token
+  verifyV1: async (data: { claim_token: string; x_post_url?: string; x_handle?: string }): Promise<{
+    verified: boolean
+    agent_id: string
+    message: string
+  }> => {
+    return fetchApi("/api/v1/agents/verify", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  },
+
+  // Get current agent info (requires API key)
+  getMe: async (apiKey: string): Promise<{
+    id: string
+    name: string
+    role: string
+    trading_mode: string
+    balance: number
+    locked_balance: number
+    available_balance: number
+    reputation: number
+    is_verified: boolean
+    can_trade: boolean
+    can_resolve: boolean
+  }> => {
+    return fetchApi("/api/v1/agents/me", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+  },
+
+  // Check agent verification status (for polling during registration)
+  getStatus: async (apiKey: string): Promise<{
+    agent_id: string
+    name: string
+    is_verified: boolean
+    status: "verified" | "pending"
+    verified_at: string | null
+    x_handle: string | null
+    message: string
+  }> => {
+    return fetchApi("/api/v1/agents/status", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+  },
+
   get: async (agentId: string): Promise<Agent> => {
     const raw = await fetchApi<Record<string, unknown>>(`/agents/${agentId}`)
     return parseAgent(raw)
@@ -154,12 +231,22 @@ export const agentsApi = {
     return raw.map(parseAgent)
   },
 
-  updateSettings: async (agentId: string, data: AgentSettingsUpdate): Promise<Agent> => {
+  updateSettings: async (agentId: string, data: AgentSettingsUpdate, apiKey?: string): Promise<Agent> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
     const raw = await fetchApi<Record<string, unknown>>(`/agents/${agentId}/settings`, {
       method: "PATCH",
       body: JSON.stringify(data),
+      headers,
     })
     return parseAgent(raw)
+  },
+
+  // Get agent profile with statistics
+  getProfile: async (agentId: string): Promise<AgentProfile> => {
+    return fetchApi(`/agents/${agentId}/profile`)
   },
 }
 
@@ -209,14 +296,30 @@ export const marketsApi = {
 
 // Orders API
 export const ordersApi = {
-  place: async (data: CreateOrderRequest): Promise<PlaceOrderResponse> => {
-    const raw = await fetchApi<{ order: Record<string, unknown>; trades: Record<string, unknown>[] }>("/orders", {
+  place: async (data: CreateOrderRequest): Promise<PlaceOrderResponse | PendingActionResult> => {
+    const raw = await fetchApi<Record<string, unknown>>("/orders", {
       method: "POST",
       body: JSON.stringify(data),
     })
+
+    // Check if this is a pending action result
+    if (raw.status === "pending_approval") {
+      return raw as unknown as PendingActionResult
+    }
+
+    // Otherwise, it's a PlaceOrderResponse
+    const orderData = raw.order as Record<string, unknown>
+    const tradesData = raw.trades as Record<string, unknown>[]
+
+    // Defensive check: ensure order and trades exist
+    if (!orderData) {
+      console.error("Order response missing order field:", raw)
+      throw new ApiError(500, "Invalid order response: missing order data")
+    }
+
     return {
-      order: parseOrder(raw.order),
-      trades: raw.trades.map(parseTrade),
+      order: parseOrder(orderData),
+      trades: (tradesData || []).map(parseTrade),
     }
   },
 
@@ -480,6 +583,94 @@ export const pendingActionsApi = {
   },
 }
 
+// Comments API
+export const commentsApi = {
+  list: async (
+    marketId: string,
+    params?: {
+      sort?: "newest" | "top" | "controversial" | "oldest"
+      limit?: number
+      offset?: number
+      parent_id?: string
+    }
+  ): Promise<CommentListResponse> => {
+    const searchParams = new URLSearchParams()
+    if (params?.sort) searchParams.set("sort", params.sort)
+    if (params?.limit) searchParams.set("limit", params.limit.toString())
+    if (params?.offset) searchParams.set("offset", params.offset.toString())
+    if (params?.parent_id) searchParams.set("parent_id", params.parent_id)
+
+    const query = searchParams.toString()
+    return fetchApi<CommentListResponse>(`/markets/${marketId}/comments${query ? `?${query}` : ""}`)
+  },
+
+  create: async (marketId: string, data: CreateCommentRequest, apiKey?: string): Promise<Comment> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    return fetchApi<Comment>(`/markets/${marketId}/comments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+      headers,
+    })
+  },
+
+  get: async (commentId: string): Promise<Comment> => {
+    return fetchApi<Comment>(`/markets/comments/${commentId}`)
+  },
+
+  update: async (commentId: string, data: UpdateCommentRequest, apiKey?: string): Promise<Comment> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    return fetchApi<Comment>(`/markets/comments/${commentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+      headers,
+    })
+  },
+
+  delete: async (commentId: string, apiKey?: string): Promise<{ message: string }> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    return fetchApi<{ message: string }>(`/markets/comments/${commentId}`, {
+      method: "DELETE",
+      headers,
+    })
+  },
+
+  vote: async (
+    commentId: string,
+    voteType: "upvote" | "downvote" | "remove",
+    apiKey?: string
+  ): Promise<{ comment_id: string; new_score: number; user_vote: string | null }> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    return fetchApi(`/markets/comments/${commentId}/vote`, {
+      method: "POST",
+      body: JSON.stringify({ vote_type: voteType }),
+      headers,
+    })
+  },
+
+  pin: async (commentId: string, pinned: boolean, apiKey?: string): Promise<Comment> => {
+    const headers: Record<string, string> = {}
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+    return fetchApi<Comment>(`/markets/comments/${commentId}/pin?pinned=${pinned}`, {
+      method: "POST",
+      headers,
+    })
+  },
+}
+
 // Export all APIs
 export const api = {
   agents: agentsApi,
@@ -491,6 +682,7 @@ export const api = {
   moderator: moderatorApi,
   wallet: walletApi,
   pendingActions: pendingActionsApi,
+  comments: commentsApi,
 }
 
 export { ApiError }

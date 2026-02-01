@@ -13,4 +13,3 @@ services:
         value: production
       - key: ADMIN_SECRET_KEY
         generateValue: true
-

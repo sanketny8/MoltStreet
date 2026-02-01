@@ -1,25 +1,28 @@
 """
 Pending Actions Service - Execute approved actions.
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from server.models import (
-    Agent,
-    PendingAction,
-    ActionType,
     ActionStatus,
-    Order,
-    Side,
-    OrderStatus,
+    ActionType,
+    Agent,
     Market,
+    Order,
+    OrderStatus,
+    OrderType,
+    PendingAction,
+    Side,
 )
 from server.services.matching import match_order
+from server.services.position_validator import can_sell_shares
 
 
 async def create_pending_action(
@@ -34,7 +37,7 @@ async def create_pending_action(
         agent_id=agent_id,
         action_type=action_type,
         action_payload=payload,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=expires_in_hours),
+        expires_at=datetime.utcnow() + timedelta(hours=expires_in_hours),
     )
     session.add(action)
     await session.commit()
@@ -45,7 +48,7 @@ async def create_pending_action(
 async def execute_pending_action(
     session: AsyncSession,
     action: PendingAction,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute an approved pending action and return the result."""
 
     if action.action_type == ActionType.PLACE_ORDER:
@@ -61,12 +64,13 @@ async def execute_pending_action(
 async def _execute_place_order(
     session: AsyncSession,
     action: PendingAction,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a place order action."""
     payload = action.action_payload
     agent_id = action.agent_id
     market_id = UUID(payload["market_id"])
     side = Side(payload["side"])
+    order_type = OrderType(payload.get("order_type", "buy"))  # Default to BUY for backward compat
     price = Decimal(str(payload["price"]))
     size = int(payload["size"])
 
@@ -84,21 +88,30 @@ async def _execute_place_order(
     if market.status != "open":
         raise ValueError(f"Market is not open (status: {market.status})")
 
-    # Lock balance
-    cost = price * size
-    agent = await session.get(Agent, agent_id)
-    if agent.available_balance < cost:
-        raise ValueError(f"Insufficient balance. Need {cost}, available: {agent.available_balance}")
+    # Validate based on order type
+    if order_type == OrderType.BUY:
+        # BUY orders: Lock balance
+        cost = price * size
+        if agent.available_balance < cost:
+            raise ValueError(
+                f"Insufficient balance. Need {cost}, available: {agent.available_balance}"
+            )
 
-    # Lock the balance
-    agent.locked_balance += cost
-    session.add(agent)
+        # Lock the balance
+        agent.locked_balance += cost
+        session.add(agent)
+    else:  # SELL
+        # SELL orders: Validate position (no balance lock needed)
+        can_sell, error_msg = await can_sell_shares(session, agent_id, market_id, side, size)
+        if not can_sell:
+            raise ValueError(error_msg)
 
     # Create order
     order = Order(
         agent_id=agent_id,
         market_id=market_id,
         side=side,
+        order_type=order_type,
         price=price,
         size=size,
         filled=0,
@@ -113,6 +126,7 @@ async def _execute_place_order(
 
     return {
         "order_id": str(order.id),
+        "order_type": order_type.value,
         "status": order.status.value,
         "trades_count": len(trades),
         "filled": order.filled,
@@ -122,7 +136,7 @@ async def _execute_place_order(
 async def _execute_cancel_order(
     session: AsyncSession,
     action: PendingAction,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a cancel order action."""
     payload = action.action_payload
     order_id = UUID(payload["order_id"])
@@ -161,7 +175,7 @@ async def _execute_cancel_order(
 async def _execute_transfer(
     session: AsyncSession,
     action: PendingAction,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute a token transfer action."""
     payload = action.action_payload
     from_agent_id = action.agent_id
@@ -179,7 +193,9 @@ async def _execute_transfer(
 
     # Check balance
     if from_agent.available_balance < amount:
-        raise ValueError(f"Insufficient balance. Need {amount}, available: {from_agent.available_balance}")
+        raise ValueError(
+            f"Insufficient balance. Need {amount}, available: {from_agent.available_balance}"
+        )
 
     # Execute transfer
     from_agent.balance -= amount
@@ -198,7 +214,7 @@ async def _execute_transfer(
 
 async def expire_old_actions(session: AsyncSession) -> int:
     """Mark expired pending actions. Returns count of expired actions."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     query = select(PendingAction).where(
         PendingAction.status == ActionStatus.PENDING,
         PendingAction.expires_at < now,

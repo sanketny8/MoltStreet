@@ -13,16 +13,21 @@ export function PriceChart({ trades = [], loading }: PriceChartProps) {
   const chartData = useMemo(() => {
     if (!trades || trades.length === 0) return []
 
-    // Sort trades by time (oldest first for chart)
+    // Filter out invalid trades and sort by time (oldest first for chart)
     const sortedTrades = [...trades]
+      .filter((trade) => trade && trade.price != null && trade.created_at)
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
 
-    // Convert to chart points
-    return sortedTrades.map((trade) => ({
-      time: new Date(trade.created_at).getTime(),
-      price: trade.price * 100, // Convert to cents
-      side: trade.side,
-    }))
+    // Convert to chart points with safe price parsing
+    return sortedTrades.map((trade) => {
+      // Ensure price is a number (defensive programming)
+      const price = typeof trade.price === 'number' ? trade.price : parseFloat(String(trade.price)) || 0
+      return {
+        time: new Date(trade.created_at).getTime(),
+        price: price * 100, // Convert to cents
+        side: trade.side,
+      }
+    })
   }, [trades])
 
   // Generate SVG path for the price line

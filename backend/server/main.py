@@ -1,25 +1,78 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from server.database import init_db
-from server.routers import agents, markets, orders, positions, trades, ws, admin, moderator, wallet, api_v1, skills, pending_actions
 from server.config import settings
+from server.database import engine, init_db
+from server.middleware.error_handlers import register_exception_handlers
+from server.routers import (
+    admin,
+    agents,
+    api_v1,
+    comments,
+    markets,
+    moderator,
+    orders,
+    pending_actions,
+    positions,
+    skills,
+    trades,
+    wallet,
+    ws,
+)
+from server.utils.logging_config import setup_logging
+
+# Setup logging
+setup_logging(
+    log_level=getattr(settings, "LOG_LEVEL", "INFO"), use_json=getattr(settings, "LOG_JSON", False)
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup."""
+    logger.info("Starting MoltStreet API server...")
+
     # Try to init DB with timeout, don't block startup if it fails
     try:
         await asyncio.wait_for(init_db(), timeout=15.0)
-    except asyncio.TimeoutError:
-        print("Warning: Database initialization timed out. Server starting without DB.")
+        logger.info("Database initialized successfully")
+    except TimeoutError:
+        logger.exception("=" * 80)
+        logger.exception("DATABASE CONNECTION TIMEOUT")
+        logger.exception("=" * 80)
+        logger.exception(f"Database URL: {settings.DATABASE_URL[:50]}...")
+        logger.exception("Possible causes:")
+        logger.exception("  1. PostgreSQL database is not accessible")
+        logger.exception("  2. Wrong credentials in DATABASE_URL")
+        logger.exception("  3. Network/firewall issues")
+        logger.exception("")
+        logger.exception("For local development, use SQLite:")
+        logger.exception("  DATABASE_URL=sqlite+aiosqlite:///./moltstreet.db")
+        logger.exception("")
+        logger.exception("Update your .env file in the backend/ directory")
+        logger.exception("=" * 80)
+        logger.warning("Server starting without database - API endpoints will fail!")
     except Exception as e:
-        print(f"Warning: Database initialization failed: {e}")
+        logger.exception("=" * 80)
+        logger.exception("DATABASE INITIALIZATION FAILED")
+        logger.exception("=" * 80)
+        logger.exception(f"Database URL: {settings.DATABASE_URL[:50]}...")
+        logger.exception("")
+        logger.exception("For local development, use SQLite:")
+        logger.exception("  DATABASE_URL=sqlite+aiosqlite:///./moltstreet.db")
+        logger.exception("")
+        logger.exception("Update your .env file in the backend/ directory")
+        logger.exception("=" * 80)
+        logger.warning("Server starting without database - API endpoints will fail!")
+
+    logger.info("Server startup complete")
     yield
+    logger.info("Server shutting down...")
 
 
 app = FastAPI(
@@ -53,7 +106,10 @@ MoltStreet is a prediction market platform where AI agents bet tokens on outcome
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     openapi_tags=[
-        {"name": "API v1", "description": "Versioned API for external agents (requires Bearer token)"},
+        {
+            "name": "API v1",
+            "description": "Versioned API for external agents (requires Bearer token)",
+        },
         {"name": "skills", "description": "Skill files for AI agents (markdown documentation)"},
         {"name": "agents", "description": "Agent registration and management"},
         {"name": "markets", "description": "Prediction markets CRUD and order book"},
@@ -65,7 +121,7 @@ MoltStreet is a prediction market platform where AI agents bet tokens on outcome
         {"name": "moderator", "description": "Moderator dashboard and resolution rewards"},
         {"name": "wallet", "description": "Agent wallet and transactions"},
         {"name": "pending-actions", "description": "Manual mode pending action approval"},
-    ]
+    ],
 )
 
 # CORS middleware
@@ -82,21 +138,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register global exception handlers
+register_exception_handlers(app)
+
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Health check endpoint with database connectivity check."""
+    from sqlalchemy import text
+
+    health_status = {"status": "ok", "database": "unknown"}
+
+    # Check database connectivity
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            health_status["database"] = "connected"
+    except Exception as e:
+        health_status["status"] = "degraded"
+        health_status["database"] = f"error: {str(e)[:100]}"
+
+    return health_status
 
 
 @app.get("/")
 async def root():
     """API root."""
-    return {
-        "name": "MoltStreet API",
-        "version": "0.1.0",
-        "docs": "/docs"
-    }
+    return {"name": "MoltStreet API", "version": "0.1.0", "docs": "/docs"}
 
 
 # Include routers
@@ -112,3 +180,6 @@ app.include_router(admin.router)
 app.include_router(moderator.router)
 app.include_router(wallet.router)
 app.include_router(pending_actions.router)
+
+# Comments/Forum
+app.include_router(comments.router)

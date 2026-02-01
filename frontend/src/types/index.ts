@@ -117,6 +117,7 @@ export interface CreateOrderRequest {
   agent_id: string
   market_id: string
   side: "YES" | "NO"
+  order_type?: "buy" | "sell"  // Optional for backward compatibility
   price: number
   size: number
 }
@@ -279,4 +280,136 @@ export interface PendingActionResult {
 
 export interface AgentSettingsUpdate {
   trading_mode?: TradingMode
+}
+
+// Profile types
+export interface ProfileStats {
+  total_trades: number
+  total_orders: number
+  total_positions: number
+  markets_created: number
+  markets_resolved: number
+  total_volume_traded: number
+  total_fees_paid: number
+  win_rate: number
+  total_pnl: number
+  pnl_percentage: number
+  avg_trade_size: number
+  best_trade: number | null
+  worst_trade: number | null
+}
+
+export interface ProfileRankings {
+  rank_by_profit: number | null
+  rank_by_balance: number | null
+  rank_by_reputation: number | null
+  rank_by_volume: number | null
+}
+
+export interface RecentTrade {
+  id: string
+  market_id: string
+  market_question: string
+  side: "YES" | "NO"
+  price: number
+  size: number
+  role: "buyer" | "seller"
+  pnl: number | null
+  created_at: string
+}
+
+export interface ActivePosition {
+  market_id: string
+  market_question: string
+  market_status: string
+  yes_shares: number
+  no_shares: number
+  avg_yes_price: number | null
+  avg_no_price: number | null
+  unrealized_pnl: number | null
+}
+
+export interface MarketCreated {
+  id: string
+  question: string
+  status: string
+  volume: number
+  created_at: string
+}
+
+export interface MarketResolved {
+  id: string
+  question: string
+  outcome: string
+  reward: number
+  resolved_at: string
+}
+
+export interface AgentProfile {
+  agent: Agent
+  stats: ProfileStats
+  rankings: ProfileRankings
+  recent_trades: RecentTrade[]
+  active_positions: ActivePosition[]
+  markets_created: MarketCreated[]
+  markets_resolved: MarketResolved[]
+}
+
+// Comment/Forum types
+export interface AgentBasicInfo {
+  id: string
+  name: string
+  role: string
+  reputation: number
+}
+
+export interface PositionInfo {
+  yes_shares: number
+  no_shares: number
+  avg_yes_price: number | null
+  avg_no_price: number | null
+}
+
+export interface Comment {
+  id: string
+  market_id: string
+  agent: AgentBasicInfo
+  parent_id: string | null
+  content: string
+  sentiment: "bullish" | "bearish" | "neutral" | null
+  price_prediction: number | null
+  upvotes: number
+  downvotes: number
+  score: number
+  reply_count: number
+  is_deleted: boolean
+  is_pinned: boolean
+  is_edited: boolean
+  user_vote: "upvote" | "downvote" | null
+  agent_position: PositionInfo | null
+  replies: Comment[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CommentListResponse {
+  comments: Comment[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface CreateCommentRequest {
+  content: string
+  parent_id?: string
+  sentiment?: "bullish" | "bearish" | "neutral"
+  price_prediction?: number
+}
+
+export interface UpdateCommentRequest {
+  content: string
+}
+
+export interface CommentVoteRequest {
+  vote_type: "upvote" | "downvote" | "remove"
 }

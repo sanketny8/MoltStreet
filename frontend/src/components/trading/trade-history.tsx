@@ -39,26 +39,30 @@ export function TradeHistory({ trades, loading }: TradeHistoryProps) {
 
       {/* Trades */}
       <div className="space-y-1 max-h-80 overflow-y-auto">
-        {trades.map((trade) => {
-          const timeAgo = getTimeAgo(trade.created_at)
+        {trades
+          .filter((trade) => trade && trade.price != null && trade.size != null)
+          .map((trade) => {
+            const timeAgo = getTimeAgo(trade.created_at)
+            // Ensure price is a number (defensive programming)
+            const price = typeof trade.price === 'number' ? trade.price : parseFloat(String(trade.price)) || 0
 
-          return (
-            <div
-              key={trade.id}
-              className="grid grid-cols-4 py-2 text-sm hover:bg-gray-50 rounded"
-            >
-              <span className={cn(
-                "font-medium",
-                trade.side === "YES" ? "text-green-600" : "text-red-600"
-              )}>
-                {trade.side}
-              </span>
-              <span className="font-mono">{(trade.price * 100).toFixed(0)}¢</span>
-              <span className="font-mono">{trade.size}</span>
-              <span className="text-right text-gray-500">{timeAgo}</span>
-            </div>
-          )
-        })}
+            return (
+              <div
+                key={trade.id}
+                className="grid grid-cols-4 py-2 text-sm hover:bg-gray-50 rounded"
+              >
+                <span className={cn(
+                  "font-medium",
+                  trade.side === "YES" ? "text-green-600" : "text-red-600"
+                )}>
+                  {trade.side}
+                </span>
+                <span className="font-mono">{(price * 100).toFixed(0)}¢</span>
+                <span className="font-mono">{trade.size}</span>
+                <span className="text-right text-gray-500">{timeAgo}</span>
+              </div>
+            )
+          })}
       </div>
     </div>
   )

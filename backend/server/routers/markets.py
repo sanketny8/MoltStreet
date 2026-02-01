@@ -1,6 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,36 +11,40 @@ from server.database import get_session
 from server.models.agent import Agent
 from server.models.market import Market, MarketCategory, MarketStatus
 from server.models.order import Order, OrderStatus, Side
-from server.models.platform import PlatformFee, FeeType
+from server.models.platform import FeeType, PlatformFee
 from server.schemas.market import (
     MarketCreate,
-    MarketResponse,
     MarketResolve,
+    MarketResponse,
     OrderBook,
     OrderBookLevel,
 )
-from server.services.settlement import resolve_market
 from server.services.matching import update_platform_stats
+from server.services.settlement import resolve_market
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
 
 @router.post("", response_model=MarketResponse)
-async def create_market(
-    data: MarketCreate,
-    session: AsyncSession = Depends(get_session)
-):
+async def create_market(data: MarketCreate, session: AsyncSession = Depends(get_session)):
     """Create a new prediction market."""
     creation_fee = settings.MARKET_CREATION_FEE
 
     # Validate deadline is in the future
-    if data.deadline <= datetime.utcnow():
+    # Normalize deadline to UTC-aware datetime for comparison
+    if data.deadline.tzinfo is None:
+        # If deadline is naive, assume it's UTC
+        deadline_utc = data.deadline.replace(tzinfo=UTC)
+    else:
+        # If deadline is aware, convert to UTC
+        deadline_utc = data.deadline.astimezone(UTC)
+
+    now_utc = datetime.now(UTC)
+    if deadline_utc <= now_utc:
         raise HTTPException(status_code=400, detail="Deadline must be in the future")
 
     # Get creator and check balance
-    result = await session.execute(
-        select(Agent).where(Agent.id == data.creator_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == data.creator_id))
     creator = result.scalar_one_or_none()
     if not creator:
         raise HTTPException(status_code=404, detail="Creator agent not found")
@@ -58,7 +61,7 @@ async def create_market(
         question=data.question,
         description=data.description,
         category=data.category,
-        deadline=data.deadline
+        deadline=data.deadline,
     )
     session.add(market)
 
@@ -68,7 +71,7 @@ async def create_market(
         amount=creation_fee,
         agent_id=data.creator_id,
         market_id=market.id,
-        description=f"Market creation fee for: {data.question[:50]}..."
+        description=f"Market creation fee for: {data.question[:50]}...",
     )
     session.add(fee_record)
 
@@ -80,14 +83,14 @@ async def create_market(
     return market
 
 
-@router.get("", response_model=List[MarketResponse])
+@router.get("", response_model=list[MarketResponse])
 async def list_markets(
-    status: Optional[MarketStatus] = Query(default=None),
-    category: Optional[MarketCategory] = Query(default=None),
-    creator_id: Optional[UUID] = Query(default=None),
+    status: MarketStatus | None = Query(default=None),
+    category: MarketCategory | None = Query(default=None),
+    creator_id: UUID | None = Query(default=None),
     trending: bool = Query(default=False, description="Sort by volume (trending)"),
     limit: int = Query(default=20, le=100),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """List markets with optional filters."""
     query = select(Market)
@@ -109,21 +112,16 @@ async def list_markets(
     return result.scalars().all()
 
 
-@router.get("/categories", response_model=List[str])
+@router.get("/categories", response_model=list[str])
 async def list_categories():
     """Get all available market categories."""
     return [cat.value for cat in MarketCategory]
 
 
 @router.get("/{market_id}", response_model=MarketResponse)
-async def get_market(
-    market_id: UUID,
-    session: AsyncSession = Depends(get_session)
-):
+async def get_market(market_id: UUID, session: AsyncSession = Depends(get_session)):
     """Get market details by ID."""
-    result = await session.execute(
-        select(Market).where(Market.id == market_id)
-    )
+    result = await session.execute(select(Market).where(Market.id == market_id))
     market = result.scalar_one_or_none()
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
@@ -131,15 +129,10 @@ async def get_market(
 
 
 @router.get("/{market_id}/orderbook", response_model=OrderBook)
-async def get_order_book(
-    market_id: UUID,
-    session: AsyncSession = Depends(get_session)
-):
+async def get_order_book(market_id: UUID, session: AsyncSession = Depends(get_session)):
     """Get order book for a market."""
     # Verify market exists
-    result = await session.execute(
-        select(Market).where(Market.id == market_id)
-    )
+    result = await session.execute(select(Market).where(Market.id == market_id))
     market = result.scalar_one_or_none()
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
@@ -198,15 +191,13 @@ async def get_order_book(
         best_bid=best_bid,
         best_ask=best_ask,
         spread=spread,
-        mid_price=mid_price
+        mid_price=mid_price,
     )
 
 
 @router.post("/{market_id}/resolve")
 async def resolve_market_endpoint(
-    market_id: UUID,
-    data: MarketResolve,
-    session: AsyncSession = Depends(get_session)
+    market_id: UUID, data: MarketResolve, session: AsyncSession = Depends(get_session)
 ):
     """
     Resolve a market with final outcome.
@@ -215,9 +206,7 @@ async def resolve_market_endpoint(
     This enforces separation between trading and resolution to prevent manipulation.
     """
     # Validate moderator exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == data.moderator_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == data.moderator_id))
     moderator = result.scalar_one_or_none()
     if not moderator:
         raise HTTPException(status_code=404, detail="Moderator agent not found")
@@ -226,18 +215,14 @@ async def resolve_market_endpoint(
     if not moderator.can_resolve:
         raise HTTPException(
             status_code=403,
-            detail="Only moderator agents can resolve markets. Traders cannot resolve to prevent manipulation."
+            detail="Only moderator agents can resolve markets. Traders cannot resolve to prevent manipulation.",
         )
 
     try:
         resolution = await resolve_market(
-            session,
-            market_id,
-            data.outcome,
-            data.moderator_id,
-            data.evidence
+            session, market_id, data.outcome, data.moderator_id, data.evidence
         )
         await session.commit()
         return resolution
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

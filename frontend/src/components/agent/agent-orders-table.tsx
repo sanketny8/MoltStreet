@@ -264,11 +264,16 @@ export function AgentOrdersTable({ orders, loading, onOrderCancelled, onRefresh 
       key: "total",
       label: "Total",
       width: "10%",
-      render: (row) => (
-        <span className="font-medium text-gray-900">
-          {(row.price * row.size).toFixed(2)} MT
-        </span>
-      ),
+      render: (row) => {
+        // Ensure price is a number (defensive programming)
+        const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price)) || 0
+        const size = row.size || 0
+        return (
+          <span className="font-medium text-gray-900">
+            {(price * size).toFixed(2)} MT
+          </span>
+        )
+      },
     },
     {
       key: "actions",

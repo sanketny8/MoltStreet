@@ -1,8 +1,8 @@
 """
 Pending Actions Router - Manage actions queued for owner approval in Manual Mode.
 """
-from datetime import datetime, timezone
-from typing import Optional
+
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,23 +10,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from server.database import get_session
-from server.models import Agent, PendingAction, ActionStatus, ActionType
+from server.models import ActionStatus, ActionType, Agent, PendingAction
 from server.schemas.pending_action import (
-    PendingActionResponse,
-    PendingActionListResponse,
-    ActionApprovalRequest,
     ActionRejectionRequest,
+    PendingActionListResponse,
+    PendingActionResponse,
 )
 from server.services.pending_actions import execute_pending_action
 
 router = APIRouter(prefix="/pending-actions", tags=["pending-actions"])
 
 
+def normalize_datetime(dt: datetime) -> datetime:
+    """Normalize datetime to timezone-naive UTC for comparison."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Convert timezone-aware to timezone-naive UTC
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 @router.get("", response_model=PendingActionListResponse)
 async def list_pending_actions(
     agent_id: UUID = Query(..., description="Agent ID to list actions for"),
-    status: Optional[ActionStatus] = Query(None, description="Filter by status"),
-    action_type: Optional[ActionType] = Query(None, description="Filter by action type"),
+    status: ActionStatus | None = Query(None, description="Filter by status"),
+    action_type: ActionType | None = Query(None, description="Filter by action type"),
     limit: int = Query(50, ge=1, le=100),
     session: AsyncSession = Depends(get_session),
 ):
@@ -50,9 +59,11 @@ async def list_pending_actions(
     actions = result.scalars().all()
 
     # Mark expired actions
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     for action in actions:
-        if action.status == ActionStatus.PENDING and action.expires_at < now:
+        # Normalize expires_at to timezone-naive for comparison
+        expires_at_naive = normalize_datetime(action.expires_at)
+        if action.status == ActionStatus.PENDING and expires_at_naive and expires_at_naive < now:
             action.status = ActionStatus.EXPIRED
             session.add(action)
 
@@ -84,8 +95,9 @@ async def get_pending_action(
         raise HTTPException(status_code=403, detail="Not authorized to view this action")
 
     # Check and update expiry
-    now = datetime.now(timezone.utc)
-    if action.status == ActionStatus.PENDING and action.expires_at < now:
+    now = datetime.utcnow()
+    expires_at_naive = normalize_datetime(action.expires_at)
+    if action.status == ActionStatus.PENDING and expires_at_naive and expires_at_naive < now:
         action.status = ActionStatus.EXPIRED
         session.add(action)
         await session.commit()
@@ -109,14 +121,14 @@ async def approve_pending_action(
         raise HTTPException(status_code=403, detail="Not authorized to approve this action")
 
     # Check if can be reviewed
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     if action.status != ActionStatus.PENDING:
         raise HTTPException(
-            status_code=400,
-            detail=f"Action cannot be approved. Current status: {action.status}"
+            status_code=400, detail=f"Action cannot be approved. Current status: {action.status}"
         )
 
-    if action.expires_at < now:
+    expires_at_naive = normalize_datetime(action.expires_at)
+    if expires_at_naive and expires_at_naive < now:
         action.status = ActionStatus.EXPIRED
         session.add(action)
         await session.commit()
@@ -133,7 +145,7 @@ async def approve_pending_action(
         await session.refresh(action)
     except Exception as e:
         # If execution fails, keep as pending but return error
-        raise HTTPException(status_code=400, detail=f"Failed to execute action: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to execute action: {e!s}") from e
 
     return PendingActionResponse.model_validate(action)
 
@@ -155,14 +167,14 @@ async def reject_pending_action(
         raise HTTPException(status_code=403, detail="Not authorized to reject this action")
 
     # Check if can be reviewed
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     if action.status != ActionStatus.PENDING:
         raise HTTPException(
-            status_code=400,
-            detail=f"Action cannot be rejected. Current status: {action.status}"
+            status_code=400, detail=f"Action cannot be rejected. Current status: {action.status}"
         )
 
-    if action.expires_at < now:
+    expires_at_naive = normalize_datetime(action.expires_at)
+    if expires_at_naive and expires_at_naive < now:
         action.status = ActionStatus.EXPIRED
         session.add(action)
         await session.commit()
@@ -197,8 +209,7 @@ async def delete_pending_action(
     # Only allow deleting pending actions
     if action.status != ActionStatus.PENDING:
         raise HTTPException(
-            status_code=400,
-            detail=f"Cannot delete action with status: {action.status}"
+            status_code=400, detail=f"Cannot delete action with status: {action.status}"
         )
 
     await session.delete(action)

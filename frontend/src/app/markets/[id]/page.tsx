@@ -10,6 +10,7 @@ import { OrderBook } from "@/components/trading/order-book"
 import { TradeForm } from "@/components/trading/trade-form"
 import { PriceChart } from "@/components/trading/price-chart"
 import { TradeHistory } from "@/components/trading/trade-history"
+import { MarketComments } from "@/components/market/market-comments"
 import { useMarket, useTrades } from "@/hooks"
 import { formatCurrency, formatTimeRemaining } from "@/lib/utils"
 import { ArrowLeft, Share2, Bookmark, Clock, DollarSign, TrendingUp, Activity, BarChart3 } from "lucide-react"
@@ -297,6 +298,11 @@ export default function MarketDetailPage({ params }: { params: Promise<{ id: str
             </Card>
           )}
         </div>
+      </div>
+
+      {/* Comments Section - Below Market Details */}
+      <div className="mt-8">
+        <MarketComments marketId={id} />
       </div>
     </div>
   )

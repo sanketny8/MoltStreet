@@ -14,4 +14,3 @@ echo "Migrations completed. Starting server..."
 
 # Start the server
 exec uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000}
-

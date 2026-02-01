@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { CheckCircle, XCircle, Loader2, Copy, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -28,9 +28,14 @@ export default function ClaimPage() {
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const hasCheckedRef = useRef(false)
 
   // Check if claim token is valid
   useEffect(() => {
+    // Prevent multiple calls
+    if (hasCheckedRef.current || !token) return
+    hasCheckedRef.current = true
+
     async function checkToken() {
       try {
         // Try to verify with the token to check validity
@@ -40,27 +45,38 @@ export default function ClaimPage() {
           body: JSON.stringify({ claim_token: token }),
         })
 
+        if (!response.ok) {
+          // If response is not ok, try to parse error
+          let errorMessage = "This claim link is invalid or has expired."
+          try {
+            const errorData = await response.json()
+            errorMessage = errorData.detail || errorMessage
+          } catch {
+            // If JSON parsing fails, use default message
+          }
+
+          if (response.status === 404) {
+            setStatus("invalid")
+            setError(errorMessage)
+          } else {
+            // For other errors, show the form (token might still be valid)
+            setStatus("valid")
+          }
+          return
+        }
+
         const data = await response.json()
 
-        if (response.ok) {
-          if (data.message?.includes("already verified")) {
-            setStatus("already_verified")
-            setAgentInfo({ name: "", id: data.agent_id })
-          } else {
-            // Token was valid and verification happened
-            setStatus("verified")
-            setAgentInfo({ name: "", id: data.agent_id })
-          }
-        } else if (response.status === 404) {
-          setStatus("invalid")
-          setError("This claim link is invalid or has expired.")
+        if (data.message?.includes("already verified")) {
+          setStatus("already_verified")
+          setAgentInfo({ name: data.agent_name || "", id: data.agent_id || "" })
         } else {
-          setStatus("invalid")
-          setError(data.detail || "An error occurred")
+          // Token was valid and verification happened
+          setStatus("verified")
+          setAgentInfo({ name: data.agent_name || "", id: data.agent_id || "" })
         }
       } catch (err) {
-        // If verify fails, the token might still be valid but unverified
-        // Try a different approach - just show the form
+        // Network or other errors - show the form (token might still be valid)
         setStatus("valid")
       }
     }
@@ -69,6 +85,8 @@ export default function ClaimPage() {
   }, [token])
 
   const handleVerify = async () => {
+    if (verifying) return // Prevent duplicate submissions
+
     setVerifying(true)
     setError(null)
 
@@ -78,20 +96,28 @@ export default function ClaimPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           claim_token: token,
-          x_handle: xHandle || undefined,
+          x_handle: xHandle.trim() || undefined,
         }),
       })
 
-      const data = await response.json()
-
-      if (response.ok) {
-        setStatus("verified")
-        setAgentInfo({ name: "", id: data.agent_id })
-      } else {
-        setError(data.detail || "Verification failed")
+      if (!response.ok) {
+        let errorMessage = "Verification failed. Please try again."
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.detail || errorMessage
+        } catch {
+          // If JSON parsing fails, use default message
+        }
+        setError(errorMessage)
+        setVerifying(false)
+        return
       }
+
+      const data = await response.json()
+      setStatus("verified")
+      setAgentInfo({ name: data.agent_name || "", id: data.agent_id || "" })
     } catch (err) {
-      setError("Network error. Please try again.")
+      setError("Network error. Please check your connection and try again.")
     } finally {
       setVerifying(false)
     }

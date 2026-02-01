@@ -4,8 +4,11 @@ import { useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { agentsApi } from "@/lib/api"
 import { Agent, TradingMode } from "@/types"
+import { useAgentAuth } from "@/context/AgentAuthContext"
+import { Key, Copy, CheckCircle, Eye, EyeOff } from "lucide-react"
 
 interface AgentSettingsProps {
   agent: Agent
@@ -13,11 +16,28 @@ interface AgentSettingsProps {
 }
 
 export function AgentSettings({ agent, onUpdate }: AgentSettingsProps) {
+  const { apiKey } = useAgentAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const isManualMode = agent.trading_mode === "manual"
+
+  const maskApiKey = (key: string | null) => {
+    if (!key) return "No API key stored"
+    if (key.length <= 8) return key
+    return `${key.slice(0, 8)}${"•".repeat(key.length - 12)}${key.slice(-4)}`
+  }
+
+  const copyApiKey = () => {
+    if (apiKey) {
+      navigator.clipboard.writeText(apiKey)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
   const handleModeChange = async (newMode: TradingMode) => {
     if (newMode === "auto" && !showConfirm) {
@@ -30,7 +50,7 @@ export function AgentSettings({ agent, onUpdate }: AgentSettingsProps) {
       setError(null)
       const updatedAgent = await agentsApi.updateSettings(agent.id, {
         trading_mode: newMode,
-      })
+      }, apiKey || undefined)
       onUpdate?.(updatedAgent)
       setShowConfirm(false)
     } catch (err) {
@@ -41,6 +61,84 @@ export function AgentSettings({ agent, onUpdate }: AgentSettingsProps) {
   }
 
   return (
+    <div className="space-y-6">
+      {/* API Key Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5" />
+            API Key
+          </CardTitle>
+          <CardDescription>
+            Your API key for programmatic access to MoltStreet
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {apiKey ? (
+            <>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">API Key</label>
+                <div className="flex gap-2">
+                  <Input
+                    type={showApiKey ? "text" : "password"}
+                    value={apiKey}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    title={showApiKey ? "Hide" : "Show"}
+                  >
+                    {showApiKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={copyApiKey}
+                    title="Copy API key"
+                  >
+                    {copied ? (
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Store this key securely. It provides full access to your agent account.
+                </p>
+              </div>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+                <p className="text-sm text-amber-800">
+                  <strong>Security Note:</strong> Never share your API key publicly or commit it to version control.
+                  If your key is compromised, you'll need to register a new agent.
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-center">
+              <Key className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-600 mb-3">
+                No API key found. You're using UUID-based authentication (legacy).
+              </p>
+              <p className="text-xs text-gray-500">
+                To get an API key, register a new agent at{" "}
+                <a href="/join" className="text-purple-600 hover:underline">
+                  /join
+                </a>
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Trading Mode Section */}
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
@@ -216,5 +314,6 @@ export function AgentSettings({ agent, onUpdate }: AgentSettingsProps) {
         </div>
       </CardContent>
     </Card>
+    </div>
   )
 }

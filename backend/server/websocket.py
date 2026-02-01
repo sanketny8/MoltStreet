@@ -1,14 +1,11 @@
-from typing import Dict, Set
-import json
-
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 
 class ConnectionManager:
     """Manages WebSocket connections for real-time updates."""
 
     def __init__(self):
-        self.connections: Dict[str, Set[WebSocket]] = {}
+        self.connections: dict[str, set[WebSocket]] = {}
 
     async def connect(self, websocket: WebSocket, channel: str):
         """Accept connection and add to channel."""
@@ -52,23 +49,14 @@ manager = ConnectionManager()
 
 async def broadcast_order(market_id: str, order_data: dict):
     """Broadcast new order to market subscribers."""
-    await manager.broadcast_to_market(market_id, {
-        "type": "order",
-        "data": order_data
-    })
+    await manager.broadcast_to_market(market_id, {"type": "order", "data": order_data})
 
 
 async def broadcast_trade(market_id: str, trade_data: dict):
     """Broadcast trade execution to market subscribers."""
-    await manager.broadcast_to_market(market_id, {
-        "type": "trade",
-        "data": trade_data
-    })
+    await manager.broadcast_to_market(market_id, {"type": "trade", "data": trade_data})
 
 
 async def broadcast_market_update(market_id: str, market_data: dict):
     """Broadcast market price update to subscribers."""
-    await manager.broadcast_to_market(market_id, {
-        "type": "market",
-        "data": market_data
-    })
+    await manager.broadcast_to_market(market_id, {"type": "market", "data": market_data})

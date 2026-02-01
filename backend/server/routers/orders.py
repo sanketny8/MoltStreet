@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,32 +8,30 @@ from sqlmodel import select
 from server.database import get_session
 from server.models.agent import Agent, TradingMode
 from server.models.market import Market, MarketStatus
-from server.models.order import Order, OrderStatus, Side
+from server.models.order import Order, OrderStatus, OrderType
 from server.models.pending_action import ActionType
 from server.schemas.order import (
+    CancelOrderResponse,
     OrderCreate,
     OrderResponse,
     PlaceOrderResponse,
-    CancelOrderResponse,
     TradeResponse,
 )
 from server.schemas.pending_action import PendingActionResult
 from server.services.matching import (
-    match_order,
     lock_balance_for_order,
+    match_order,
     unlock_balance_for_cancelled_order,
 )
 from server.services.pending_actions import create_pending_action
-from server.websocket import broadcast_order, broadcast_trade, broadcast_market_update
+from server.services.position_validator import can_sell_shares
+from server.websocket import broadcast_market_update, broadcast_order, broadcast_trade
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 @router.post("", response_model=Union[PlaceOrderResponse, PendingActionResult])
-async def place_order(
-    data: OrderCreate,
-    session: AsyncSession = Depends(get_session)
-):
+async def place_order(data: OrderCreate, session: AsyncSession = Depends(get_session)):
     """
     Place a new order in a market.
 
@@ -41,9 +39,7 @@ async def place_order(
     If agent is in AUTO mode, executes immediately.
     """
     # Validate agent exists
-    agent_result = await session.execute(
-        select(Agent).where(Agent.id == data.agent_id)
-    )
+    agent_result = await session.execute(select(Agent).where(Agent.id == data.agent_id))
     agent = agent_result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -52,13 +48,11 @@ async def place_order(
     if not agent.can_trade:
         raise HTTPException(
             status_code=403,
-            detail="Moderator agents cannot trade. This ensures fair market resolution."
+            detail="Moderator agents cannot trade. This ensures fair market resolution.",
         )
 
     # Validate market exists and is open
-    market_result = await session.execute(
-        select(Market).where(Market.id == data.market_id)
-    )
+    market_result = await session.execute(select(Market).where(Market.id == data.market_id))
     market = market_result.scalar_one_or_none()
     if not market:
         raise HTTPException(status_code=404, detail="Market not found")
@@ -67,13 +61,22 @@ async def place_order(
 
     # Check trading mode - if MANUAL, create pending action instead
     if agent.trading_mode == TradingMode.MANUAL:
-        # Validate balance before creating pending action
-        cost = data.price * data.size
-        if agent.available_balance < cost:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Insufficient balance. Need {cost}, have {agent.available_balance}"
+        # Validate based on order type
+        if data.order_type == OrderType.BUY:
+            # BUY orders: Validate balance
+            cost = data.price * data.size
+            if agent.available_balance < cost:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient balance. Need {cost}, have {agent.available_balance}",
+                )
+        else:  # SELL
+            # SELL orders: Validate position
+            can_sell, error_msg = await can_sell_shares(
+                session, data.agent_id, data.market_id, data.side, data.size
             )
+            if not can_sell:
+                raise HTTPException(status_code=400, detail=error_msg)
 
         # Create pending action for approval
         pending_action = await create_pending_action(
@@ -83,6 +86,7 @@ async def place_order(
             payload={
                 "market_id": str(data.market_id),
                 "side": data.side.value,
+                "order_type": data.order_type.value,
                 "price": str(data.price),
                 "size": data.size,
             },
@@ -98,20 +102,28 @@ async def place_order(
         )
 
     # AUTO mode - execute immediately
-    # Lock balance for order
-    can_lock = await lock_balance_for_order(
-        session, data.agent_id, data.price, data.size
-    )
-    if not can_lock:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
+    # Validate based on order type
+    if data.order_type == OrderType.BUY:
+        # BUY orders: Lock balance
+        can_lock = await lock_balance_for_order(session, data.agent_id, data.price, data.size)
+        if not can_lock:
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+    else:  # SELL
+        # SELL orders: Validate position (no balance lock needed)
+        can_sell, error_msg = await can_sell_shares(
+            session, data.agent_id, data.market_id, data.side, data.size
+        )
+        if not can_sell:
+            raise HTTPException(status_code=400, detail=error_msg)
 
     # Create order
     order = Order(
         agent_id=data.agent_id,
         market_id=data.market_id,
         side=data.side,
+        order_type=data.order_type,
         price=data.price,
-        size=data.size
+        size=data.size,
     )
     session.add(order)
 
@@ -129,56 +141,58 @@ async def place_order(
     trade_responses = []
     for trade in trades:
         await session.refresh(trade)
-        trade_responses.append(TradeResponse(
-            id=trade.id,
-            market_id=trade.market_id,
-            buyer_id=trade.buyer_id,
-            seller_id=trade.seller_id,
-            side=trade.side,
-            price=trade.price,
-            size=trade.size,
-            created_at=trade.created_at
-        ))
+        trade_responses.append(
+            TradeResponse(
+                id=trade.id,
+                market_id=trade.market_id,
+                buyer_id=trade.buyer_id,
+                seller_id=trade.seller_id,
+                side=trade.side,
+                price=trade.price,
+                size=trade.size,
+                created_at=trade.created_at,
+            )
+        )
 
     # Broadcast updates via WebSocket
     market_id_str = str(data.market_id)
 
     # Broadcast new order
-    await broadcast_order(market_id_str, {
-        "id": str(order.id),
-        "side": order.side.value,
-        "price": float(order.price),
-        "size": order.size - order.filled
-    })
+    await broadcast_order(
+        market_id_str,
+        {
+            "id": str(order.id),
+            "side": order.side.value,
+            "price": float(order.price),
+            "size": order.size - order.filled,
+        },
+    )
 
     # Broadcast trades
     for trade_resp in trade_responses:
-        await broadcast_trade(market_id_str, {
-            "id": str(trade_resp.id),
-            "price": float(trade_resp.price),
-            "size": trade_resp.size
-        })
+        await broadcast_trade(
+            market_id_str,
+            {"id": str(trade_resp.id), "price": float(trade_resp.price), "size": trade_resp.size},
+        )
 
     # Broadcast market price update if trades occurred
     if trades:
         await session.refresh(market)
-        await broadcast_market_update(market_id_str, {
-            "yes_price": float(market.yes_price),
-            "no_price": float(market.no_price),
-            "volume": float(market.volume)
-        })
+        await broadcast_market_update(
+            market_id_str,
+            {
+                "yes_price": float(market.yes_price),
+                "no_price": float(market.no_price),
+                "volume": float(market.volume),
+            },
+        )
 
-    return PlaceOrderResponse(
-        order=OrderResponse.model_validate(order),
-        trades=trade_responses
-    )
+    return PlaceOrderResponse(order=OrderResponse.model_validate(order), trades=trade_responses)
 
 
 @router.delete("/{order_id}", response_model=Union[CancelOrderResponse, PendingActionResult])
 async def cancel_order(
-    order_id: UUID,
-    agent_id: UUID = Query(...),
-    session: AsyncSession = Depends(get_session)
+    order_id: UUID, agent_id: UUID = Query(...), session: AsyncSession = Depends(get_session)
 ):
     """
     Cancel an open order.
@@ -187,9 +201,7 @@ async def cancel_order(
     If agent is in AUTO mode, cancels immediately.
     """
     # Get order
-    result = await session.execute(
-        select(Order).where(Order.id == order_id).with_for_update()
-    )
+    result = await session.execute(select(Order).where(Order.id == order_id).with_for_update())
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -230,29 +242,23 @@ async def cancel_order(
     # AUTO mode - cancel immediately
     # Calculate refund for unfilled portion
     unfilled = order.size - order.filled
-    refund = await unlock_balance_for_cancelled_order(
-        session, agent_id, order.price, unfilled
-    )
+    refund = await unlock_balance_for_cancelled_order(session, agent_id, order.price, unfilled)
 
     # Update order status
     order.status = OrderStatus.CANCELLED
 
     await session.commit()
 
-    return CancelOrderResponse(
-        order_id=order_id,
-        status="cancelled",
-        refunded=refund
-    )
+    return CancelOrderResponse(order_id=order_id, status="cancelled", refunded=refund)
 
 
-@router.get("", response_model=List[OrderResponse])
+@router.get("", response_model=list[OrderResponse])
 async def list_orders(
     agent_id: UUID = Query(...),
-    status: Optional[OrderStatus] = Query(default=None),
-    market_id: Optional[UUID] = Query(default=None),
+    status: OrderStatus | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
     limit: int = Query(default=50, le=100),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """List orders for an agent."""
     query = select(Order).where(Order.agent_id == agent_id)

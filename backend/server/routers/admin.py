@@ -1,9 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -13,7 +12,7 @@ from server.database import get_session
 from server.models.agent import Agent, AgentRole
 from server.models.market import Market, MarketStatus
 from server.models.order import Order, OrderStatus
-from server.models.platform import PlatformFee, PlatformStats, FeeType
+from server.models.platform import FeeType, PlatformFee, PlatformStats
 from server.models.position import Position
 from server.models.trade import Trade
 from server.models.wallet import AgentWallet
@@ -32,16 +31,14 @@ def verify_admin_key(x_admin_key: str = Header(default=None)):
 # PLATFORM OVERVIEW
 # =============================================================================
 
+
 @router.get("/stats")
 async def get_platform_stats(
-    session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    session: AsyncSession = Depends(get_session), _: bool = Depends(verify_admin_key)
 ):
     """Get aggregated platform statistics."""
     # Get platform stats
-    result = await session.execute(
-        select(PlatformStats).where(PlatformStats.id == 1)
-    )
+    result = await session.execute(select(PlatformStats).where(PlatformStats.id == 1))
     stats = result.scalar_one_or_none()
 
     if not stats:
@@ -90,24 +87,24 @@ async def get_platform_stats(
             "open_markets": open_markets,
             "resolved_markets": resolved_markets,
             "total_trades": total_trades,
-            "total_volume": float(total_volume)
+            "total_volume": float(total_volume),
         },
         "revenue": {
             "total_trading_fees": float(stats.total_trading_fees),
             "total_market_creation_fees": float(stats.total_market_creation_fees),
             "total_settlement_fees": float(stats.total_settlement_fees),
             "total_revenue": float(
-                stats.total_trading_fees +
-                stats.total_market_creation_fees +
-                stats.total_settlement_fees
-            )
+                stats.total_trading_fees
+                + stats.total_market_creation_fees
+                + stats.total_settlement_fees
+            ),
         },
         "fee_rates": {
             "trading_fee_rate": float(settings.TRADING_FEE_RATE),
             "market_creation_fee": float(settings.MARKET_CREATION_FEE),
-            "settlement_fee_rate": float(settings.SETTLEMENT_FEE_RATE)
+            "settlement_fee_rate": float(settings.SETTLEMENT_FEE_RATE),
         },
-        "updated_at": stats.updated_at.isoformat() if stats.updated_at else None
+        "updated_at": stats.updated_at.isoformat() if stats.updated_at else None,
     }
 
 
@@ -115,15 +112,16 @@ async def get_platform_stats(
 # FEE HISTORY
 # =============================================================================
 
+
 @router.get("/fees")
 async def get_fee_history(
-    fee_type: Optional[FeeType] = Query(default=None),
-    agent_id: Optional[UUID] = Query(default=None),
-    market_id: Optional[UUID] = Query(default=None),
+    fee_type: FeeType | None = Query(default=None),
+    agent_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get platform fee collection history."""
     query = select(PlatformFee)
@@ -149,7 +147,7 @@ async def get_fee_history(
             "market_id": str(fee.market_id) if fee.market_id else None,
             "trade_id": str(fee.trade_id) if fee.trade_id else None,
             "description": fee.description,
-            "created_at": fee.created_at.isoformat()
+            "created_at": fee.created_at.isoformat(),
         }
         for fee in fees
     ]
@@ -159,15 +157,13 @@ async def get_fee_history(
 async def get_fee_summary(
     days: int = Query(default=30, le=365),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get fee summary by type for the last N days."""
     cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Get fees by type
-    result = await session.execute(
-        select(PlatformFee).where(PlatformFee.created_at >= cutoff)
-    )
+    result = await session.execute(select(PlatformFee).where(PlatformFee.created_at >= cutoff))
     fees = result.scalars().all()
 
     trading_fees = sum(f.amount for f in fees if f.fee_type == FeeType.TRADING)
@@ -180,7 +176,7 @@ async def get_fee_summary(
         "market_creation_fees": float(market_creation_fees),
         "settlement_fees": float(settlement_fees),
         "total": float(trading_fees + market_creation_fees + settlement_fees),
-        "fee_count": len(fees)
+        "fee_count": len(fees),
     }
 
 
@@ -188,14 +184,15 @@ async def get_fee_summary(
 # AGENT MANAGEMENT
 # =============================================================================
 
+
 @router.get("/agents")
 async def get_all_agents(
-    role: Optional[AgentRole] = Query(default=None),
+    role: AgentRole | None = Query(default=None),
     order_by: str = Query(default="balance", pattern="^(balance|reputation|name|created_at)$"),
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get all agents with full details including wallet addresses."""
     query = select(Agent)
@@ -239,7 +236,7 @@ async def get_agent_activity(
     agent_id: UUID,
     limit: int = Query(default=50, le=200),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get detailed activity for a specific agent."""
     # Get agent
@@ -267,9 +264,7 @@ async def get_agent_activity(
     trades = trades_result.scalars().all()
 
     # Get positions
-    positions_result = await session.execute(
-        select(Position).where(Position.agent_id == agent_id)
-    )
+    positions_result = await session.execute(select(Position).where(Position.agent_id == agent_id))
     positions = positions_result.scalars().all()
 
     # Get fees paid
@@ -289,13 +284,13 @@ async def get_agent_activity(
             "name": agent.name,
             "role": agent.role.value,
             "balance": float(agent.balance),
-            "reputation": float(agent.reputation)
+            "reputation": float(agent.reputation),
         },
         "summary": {
             "total_orders": len(orders),
             "total_trades": len(trades),
             "total_positions": len(positions),
-            "total_fees_paid": float(total_fees_paid)
+            "total_fees_paid": float(total_fees_paid),
         },
         "recent_orders": [
             {
@@ -306,7 +301,7 @@ async def get_agent_activity(
                 "size": o.size,
                 "filled": o.filled,
                 "status": o.status.value,
-                "created_at": o.created_at.isoformat()
+                "created_at": o.created_at.isoformat(),
             }
             for o in orders[:20]
         ],
@@ -318,7 +313,7 @@ async def get_agent_activity(
                 "price": float(t.price),
                 "size": t.size,
                 "fee": float(t.buyer_fee if t.buyer_id == agent_id else t.seller_fee),
-                "created_at": t.created_at.isoformat()
+                "created_at": t.created_at.isoformat(),
             }
             for t in trades[:20]
         ],
@@ -328,10 +323,10 @@ async def get_agent_activity(
                 "yes_shares": p.yes_shares,
                 "no_shares": p.no_shares,
                 "avg_yes_price": float(p.avg_yes_price) if p.avg_yes_price else None,
-                "avg_no_price": float(p.avg_no_price) if p.avg_no_price else None
+                "avg_no_price": float(p.avg_no_price) if p.avg_no_price else None,
             }
             for p in positions
-        ]
+        ],
     }
 
 
@@ -339,13 +334,14 @@ async def get_agent_activity(
 # MARKET MANAGEMENT
 # =============================================================================
 
+
 @router.get("/markets")
 async def get_all_markets(
-    status: Optional[MarketStatus] = Query(default=None),
+    status: MarketStatus | None = Query(default=None),
     limit: int = Query(default=50, le=500),
     offset: int = Query(default=0),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get all markets with admin details."""
     query = select(Market)
@@ -373,7 +369,7 @@ async def get_all_markets(
             "resolved_at": m.resolved_at.isoformat() if m.resolved_at else None,
             "resolved_by": str(m.resolved_by) if m.resolved_by else None,
             "resolution_evidence": m.resolution_evidence,
-            "created_at": m.created_at.isoformat()
+            "created_at": m.created_at.isoformat(),
         }
         for m in markets
     ]
@@ -383,7 +379,7 @@ async def get_all_markets(
 async def get_market_details(
     market_id: UUID,
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get comprehensive details for a specific market."""
     # Get market
@@ -393,9 +389,7 @@ async def get_market_details(
         raise HTTPException(status_code=404, detail="Market not found")
 
     # Get orders
-    orders_result = await session.execute(
-        select(Order).where(Order.market_id == market_id)
-    )
+    orders_result = await session.execute(select(Order).where(Order.market_id == market_id))
     orders = orders_result.scalars().all()
 
     # Get trades
@@ -432,14 +426,16 @@ async def get_market_details(
             "deadline": market.deadline.isoformat(),
             "resolved_at": market.resolved_at.isoformat() if market.resolved_at else None,
             "resolved_by": str(market.resolved_by) if market.resolved_by else None,
-            "created_at": market.created_at.isoformat()
+            "created_at": market.created_at.isoformat(),
         },
         "summary": {
             "total_orders": len(orders),
-            "open_orders": len([o for o in orders if o.status in [OrderStatus.OPEN, OrderStatus.PARTIAL]]),
+            "open_orders": len(
+                [o for o in orders if o.status in [OrderStatus.OPEN, OrderStatus.PARTIAL]]
+            ),
             "total_trades": len(trades),
-            "unique_traders": len(set(p.agent_id for p in positions)),
-            "total_fees_collected": float(total_fees)
+            "unique_traders": len({p.agent_id for p in positions}),
+            "total_fees_collected": float(total_fees),
         },
         "trades": [
             {
@@ -449,18 +445,14 @@ async def get_market_details(
                 "price": float(t.price),
                 "size": t.size,
                 "total_fee": float(t.total_fee),
-                "created_at": t.created_at.isoformat()
+                "created_at": t.created_at.isoformat(),
             }
             for t in trades[:50]
         ],
         "positions": [
-            {
-                "agent_id": str(p.agent_id),
-                "yes_shares": p.yes_shares,
-                "no_shares": p.no_shares
-            }
+            {"agent_id": str(p.agent_id), "yes_shares": p.yes_shares, "no_shares": p.no_shares}
             for p in positions
-        ]
+        ],
     }
 
 
@@ -468,14 +460,15 @@ async def get_market_details(
 # TRADE HISTORY
 # =============================================================================
 
+
 @router.get("/trades")
 async def get_all_trades(
-    market_id: Optional[UUID] = Query(default=None),
-    agent_id: Optional[UUID] = Query(default=None),
+    market_id: UUID | None = Query(default=None),
+    agent_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0),
     session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    _: bool = Depends(verify_admin_key),
 ):
     """Get all trades with filtering."""
     query = select(Trade)
@@ -502,7 +495,7 @@ async def get_all_trades(
             "buyer_fee": float(t.buyer_fee),
             "seller_fee": float(t.seller_fee),
             "total_fee": float(t.total_fee),
-            "created_at": t.created_at.isoformat()
+            "created_at": t.created_at.isoformat(),
         }
         for t in trades
     ]
@@ -512,10 +505,10 @@ async def get_all_trades(
 # SYSTEM HEALTH
 # =============================================================================
 
+
 @router.get("/health")
 async def admin_health_check(
-    session: AsyncSession = Depends(get_session),
-    _: bool = Depends(verify_admin_key)
+    session: AsyncSession = Depends(get_session), _: bool = Depends(verify_admin_key)
 ):
     """Comprehensive health check for admin."""
     try:
@@ -523,11 +516,11 @@ async def admin_health_check(
         await session.execute(select(func.count(Agent.id)))
         db_status = "healthy"
     except Exception as e:
-        db_status = f"error: {str(e)}"
+        db_status = f"error: {e!s}"
 
     return {
         "status": "ok" if db_status == "healthy" else "degraded",
         "database": db_status,
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
     }

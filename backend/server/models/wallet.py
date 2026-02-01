@@ -1,32 +1,33 @@
-from datetime import datetime, timezone
+import hashlib
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
 from uuid import UUID, uuid4
-import hashlib
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 
 class TransactionType(str, Enum):
     """Type of wallet transaction."""
-    DEPOSIT = "deposit"           # Initial deposit or faucet
-    WITHDRAWAL = "withdrawal"     # Future: withdraw to external
-    TRADE_BUY = "trade_buy"       # Bought shares
-    TRADE_SELL = "trade_sell"     # Sold shares
-    TRADE_WIN = "trade_win"       # Won from market resolution
-    TRADE_LOSS = "trade_loss"     # Lost from market resolution
+
+    DEPOSIT = "deposit"  # Initial deposit or faucet
+    WITHDRAWAL = "withdrawal"  # Future: withdraw to external
+    TRADE_BUY = "trade_buy"  # Bought shares
+    TRADE_SELL = "trade_sell"  # Sold shares
+    TRADE_WIN = "trade_win"  # Won from market resolution
+    TRADE_LOSS = "trade_loss"  # Lost from market resolution
     MARKET_CREATE = "market_create"  # Fee for creating market
-    ORDER_LOCK = "order_lock"     # Funds locked for order
-    ORDER_UNLOCK = "order_unlock" # Funds unlocked from cancelled order
-    FEE = "fee"                   # Trading fee
-    TRANSFER_IN = "transfer_in"   # Received from another agent
-    TRANSFER_OUT = "transfer_out" # Sent to another agent
-    REWARD = "reward"             # Moderator reward
+    ORDER_LOCK = "order_lock"  # Funds locked for order
+    ORDER_UNLOCK = "order_unlock"  # Funds unlocked from cancelled order
+    FEE = "fee"  # Trading fee
+    TRANSFER_IN = "transfer_in"  # Received from another agent
+    TRANSFER_OUT = "transfer_out"  # Sent to another agent
+    REWARD = "reward"  # Moderator reward
 
 
 class TransactionStatus(str, Enum):
     """Status of a transaction."""
+
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -44,8 +45,8 @@ class AgentWallet(SQLModel, table=True):
     internal_address: str = Field(unique=True, index=True, max_length=50)
 
     # Future: External blockchain address
-    external_address: Optional[str] = Field(default=None, max_length=100)
-    chain_id: Optional[int] = Field(default=None)  # e.g., 8453 for Base
+    external_address: str | None = Field(default=None, max_length=100)
+    chain_id: int | None = Field(default=None)  # e.g., 8453 for Base
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -76,13 +77,13 @@ class Transaction(SQLModel, table=True):
     balance_after: Decimal = Field(default=Decimal("0.00"))  # Balance after this tx
 
     # Reference to related entities
-    market_id: Optional[UUID] = Field(default=None, foreign_key="markets.id")
-    trade_id: Optional[UUID] = Field(default=None, foreign_key="trades.id")
-    order_id: Optional[UUID] = Field(default=None, foreign_key="orders.id")
-    counterparty_id: Optional[UUID] = Field(default=None, foreign_key="agents.id")  # For transfers
+    market_id: UUID | None = Field(default=None, foreign_key="markets.id")
+    trade_id: UUID | None = Field(default=None, foreign_key="trades.id")
+    order_id: UUID | None = Field(default=None, foreign_key="orders.id")
+    counterparty_id: UUID | None = Field(default=None, foreign_key="agents.id")  # For transfers
 
     # Metadata
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
 
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -1,9 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 
 class Position(SQLModel, table=True):
@@ -16,8 +15,8 @@ class Position(SQLModel, table=True):
     market_id: UUID = Field(foreign_key="markets.id", index=True)
     yes_shares: int = Field(default=0)
     no_shares: int = Field(default=0)
-    avg_yes_price: Optional[Decimal] = Field(default=None)
-    avg_no_price: Optional[Decimal] = Field(default=None)
+    avg_yes_price: Decimal | None = Field(default=None)
+    avg_no_price: Decimal | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -1,21 +1,16 @@
 import asyncio
 import ssl
 from logging.config import fileConfig
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlmodel import SQLModel
 
 from alembic import context
+from server.config import settings
 
 # Import all models so they are registered with SQLModel.metadata
-from server.models import (
-    Agent, Market, Order, Trade, Position,
-    AgentWallet, Transaction, PlatformFee, PlatformStats, ModeratorReward
-)
-from server.config import settings
 
 config = context.config
 
@@ -62,11 +57,11 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
     from sqlalchemy.ext.asyncio import create_async_engine
-    
+
     # Handle SSL for PostgreSQL/Supabase
     connect_args = {}
     engine_kwargs = {}
-    
+
     if db_url.startswith("postgresql"):
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
@@ -79,13 +74,9 @@ async def run_async_migrations() -> None:
             "prepared_statement_cache_size": 0,
         }
         engine_kwargs["poolclass"] = pool.NullPool
-    
+
     # Create engine directly with SSL support
-    connectable = create_async_engine(
-        db_url,
-        connect_args=connect_args,
-        **engine_kwargs
-    )
+    connectable = create_async_engine(db_url, connect_args=connect_args, **engine_kwargs)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

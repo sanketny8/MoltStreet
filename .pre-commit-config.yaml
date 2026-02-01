@@ -1,0 +1,45 @@
+# Pre-commit hooks configuration for MoltStreet
+# See https://pre-commit.com for more information
+
+repos:
+  # Ruff for fast Python linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.15
+    hooks:
+      # Run the linter
+      - id: ruff
+        name: ruff check
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      # Run the formatter
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: check-yaml
+        name: Check YAML files
+      - id: check-json
+        name: Check JSON files
+      - id: check-toml
+        name: Check TOML files
+      - id: check-added-large-files
+        name: Check for large files
+        args: [--maxkb=1000]
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: check-case-conflict
+        name: Check for case conflicts
+      - id: debug-statements
+        name: Check for debugger imports
+
+# Global settings
+# Run hooks on all files, not just staged
+default_stages: [commit]

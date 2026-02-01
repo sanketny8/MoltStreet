@@ -1,9 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
 
 from server.models.order import Side
 

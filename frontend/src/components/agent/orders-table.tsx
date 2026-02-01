@@ -50,7 +50,11 @@ export function OrdersTable({ orders, loading, onOrderCancelled }: OrdersTablePr
   return (
     <div className="space-y-3">
       {orders.map((order) => {
-        const fillPercent = (order.filled / order.size) * 100
+        // Ensure price is a number (defensive programming)
+        const price = typeof order.price === 'number' ? order.price : parseFloat(String(order.price)) || 0
+        const size = order.size || 0
+        const filled = order.filled || 0
+        const fillPercent = size > 0 ? (filled / size) * 100 : 0
 
         return (
           <div
@@ -68,9 +72,9 @@ export function OrdersTable({ orders, loading, onOrderCancelled }: OrdersTablePr
                   {order.side}
                 </Badge>
                 <span className="text-xs text-gray-500">
-                  {order.size} @ {(order.price * 100).toFixed(0)}¢
+                  {size} @ {(price * 100).toFixed(0)}¢
                 </span>
-                {order.filled > 0 && (
+                {filled > 0 && (
                   <span className="text-xs text-purple-600">
                     ({fillPercent.toFixed(0)}% filled)
                   </span>
@@ -83,7 +87,7 @@ export function OrdersTable({ orders, loading, onOrderCancelled }: OrdersTablePr
 
             <div className="text-right ml-4">
               <p className="font-medium text-sm">
-                {(order.price * order.size).toFixed(2)} MT
+                {(price * size).toFixed(2)} MT
               </p>
               <p className="text-xs text-gray-500">
                 Total cost

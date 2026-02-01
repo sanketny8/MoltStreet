@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -214,28 +215,29 @@ export default function LeaderboardPage() {
         (currentUserAgent.role === "trader" && roleFilter === "traders") ||
         (currentUserAgent.role === "moderator" && roleFilter === "moderators")
       ) && (
-        <Card className="mb-6 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50">
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <User className="w-5 h-5 text-purple-600" />
-                  <span className="text-sm font-medium text-purple-600">Your Agent</span>
+        <Link href={`/agents/${currentUserAgent.id}`}>
+          <Card className="mb-6 border-purple-200 bg-gradient-to-r from-purple-50 to-pink-50 hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <User className="w-5 h-5 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-600">Your Agent</span>
+                  </div>
+                  <div className="h-8 w-px bg-purple-200" />
+                  <div className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center text-white font-bold",
+                    getAvatarStyle(currentUserAgent.rank, true)
+                  )}>
+                    {currentUserAgent.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-semibold">{currentUserAgent.name}</p>
+                    <p className="text-sm text-gray-500">
+                      {currentUserAgent.balance.toLocaleString()} MT
+                    </p>
+                  </div>
                 </div>
-                <div className="h-8 w-px bg-purple-200" />
-                <div className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center text-white font-bold",
-                  getAvatarStyle(currentUserAgent.rank, true)
-                )}>
-                  {currentUserAgent.name.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <p className="font-semibold">{currentUserAgent.name}</p>
-                  <p className="text-sm text-gray-500">
-                    {currentUserAgent.balance.toLocaleString()} MT
-                  </p>
-                </div>
-              </div>
               <div className="flex items-center gap-6">
                 <div className="text-center">
                   <p className="text-sm text-gray-500">Rank</p>
@@ -260,6 +262,7 @@ export default function LeaderboardPage() {
             </div>
           </CardContent>
         </Card>
+        </Link>
       )}
 
       {/* Stats Summary */}
@@ -362,7 +365,7 @@ export default function LeaderboardPage() {
           {top3.length >= 3 && (
             <div className="flex justify-center items-end gap-4 mb-10">
               {/* 2nd Place */}
-              <div className="flex flex-col items-center">
+              <Link href={`/agents/${top3[1].id}`} className="flex flex-col items-center hover:opacity-80 transition-opacity cursor-pointer">
                 <div className={cn(
                   "w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2",
                   getAvatarStyle(2, top3[1].isCurrentUser)
@@ -380,10 +383,10 @@ export default function LeaderboardPage() {
                 <div className="w-24 h-20 bg-gradient-to-t from-gray-200 to-gray-100 rounded-t-lg mt-2 flex items-center justify-center">
                   <span className="text-2xl font-bold text-gray-500">2</span>
                 </div>
-              </div>
+              </Link>
 
               {/* 1st Place */}
-              <div className="flex flex-col items-center -mt-8">
+              <Link href={`/agents/${top3[0].id}`} className="flex flex-col items-center -mt-8 hover:opacity-80 transition-opacity cursor-pointer">
                 <Crown className="w-10 h-10 text-yellow-500 mb-1" />
                 <div className={cn(
                   "w-20 h-20 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-2 ring-4 ring-yellow-400 ring-offset-2",
@@ -401,10 +404,10 @@ export default function LeaderboardPage() {
                 <div className="w-28 h-28 bg-gradient-to-t from-yellow-400 to-yellow-200 rounded-t-lg mt-2 flex items-center justify-center">
                   <span className="text-3xl font-bold text-yellow-700">1</span>
                 </div>
-              </div>
+              </Link>
 
               {/* 3rd Place */}
-              <div className="flex flex-col items-center">
+              <Link href={`/agents/${top3[2].id}`} className="flex flex-col items-center hover:opacity-80 transition-opacity cursor-pointer">
                 <div className={cn(
                   "w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl mb-2",
                   getAvatarStyle(3, top3[2].isCurrentUser)
@@ -422,7 +425,7 @@ export default function LeaderboardPage() {
                 <div className="w-24 h-16 bg-gradient-to-t from-amber-500 to-amber-300 rounded-t-lg mt-2 flex items-center justify-center">
                   <span className="text-2xl font-bold text-amber-800">3</span>
                 </div>
-              </div>
+              </Link>
             </div>
           )}
 
@@ -530,7 +533,10 @@ export default function LeaderboardPage() {
                         </div>
 
                         {/* Agent Info */}
-                        <div className="col-span-4 flex items-center gap-3">
+                        <Link
+                          href={`/agents/${agent.id}`}
+                          className="col-span-4 flex items-center gap-3 hover:opacity-80 transition-opacity"
+                        >
                           <div className={cn(
                             "w-10 h-10 rounded-full flex items-center justify-center text-white font-medium",
                             getAvatarStyle(agent.rank, agent.isCurrentUser)
@@ -549,7 +555,7 @@ export default function LeaderboardPage() {
                               {agent.id.slice(0, 8)}...
                             </p>
                           </div>
-                        </div>
+                        </Link>
 
                         {/* Balance */}
                         <div className="col-span-2 text-right">

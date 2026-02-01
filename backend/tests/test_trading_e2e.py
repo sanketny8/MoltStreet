@@ -4,8 +4,8 @@ End-to-end trading tests for MoltStreet prediction market.
 Tests complete trading scenarios with multiple agents, order matching,
 position tracking, and market resolution.
 """
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -13,12 +13,13 @@ from httpx import AsyncClient
 
 def get_future_deadline(days: int = 1) -> str:
     """Get a valid ISO format deadline string."""
-    return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 # =============================================================================
 # AGENT LIFECYCLE TESTS
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_agent_initial_balance(client: AsyncClient):
@@ -42,11 +43,14 @@ async def test_agent_balance_after_market_creation(client: AsyncClient):
 
     # Create market (costs 10 tokens)
     deadline = get_future_deadline()
-    await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Test market for balance check",
-        "deadline": deadline
-    })
+    await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Test market for balance check",
+            "deadline": deadline,
+        },
+    )
 
     # Check balance decreased
     agent_check = await client.get(f"/agents/{agent_id}")
@@ -63,21 +67,27 @@ async def test_agent_locked_balance_after_order(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Test market for locked balance",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Test market for locked balance",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Place order: 10 shares @ 0.50 = 5.0 locked
-    await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
     # Check locked balance
     agent_check = await client.get(f"/agents/{agent_id}")
@@ -88,6 +98,7 @@ async def test_agent_locked_balance_after_order(client: AsyncClient):
 # MARKET VALIDATION TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_create_market_past_deadline(client: AsyncClient):
     """Verify market creation fails with past deadline."""
@@ -95,12 +106,15 @@ async def test_create_market_past_deadline(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     # Use past deadline
-    past_deadline = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
-    response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "This should fail - past deadline",
-        "deadline": past_deadline
-    })
+    past_deadline = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "This should fail - past deadline",
+            "deadline": past_deadline,
+        },
+    )
 
     assert response.status_code == 400
     assert "future" in response.json()["detail"].lower()
@@ -113,11 +127,14 @@ async def test_create_market_short_question(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Short?",  # Less than 10 chars
-        "deadline": deadline
-    })
+    response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Short?",  # Less than 10 chars
+            "deadline": deadline,
+        },
+    )
 
     assert response.status_code == 422  # Validation error
 
@@ -126,11 +143,14 @@ async def test_create_market_short_question(client: AsyncClient):
 async def test_create_market_nonexistent_creator(client: AsyncClient):
     """Verify market creation fails with non-existent creator."""
     deadline = get_future_deadline()
-    response = await client.post("/markets", json={
-        "creator_id": "00000000-0000-0000-0000-000000000000",
-        "question": "This should fail - creator not found",
-        "deadline": deadline
-    })
+    response = await client.post(
+        "/markets",
+        json={
+            "creator_id": "00000000-0000-0000-0000-000000000000",
+            "question": "This should fail - creator not found",
+            "deadline": deadline,
+        },
+    )
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
@@ -144,11 +164,14 @@ async def test_list_markets_with_status_filter(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for status filter test",
-        "deadline": deadline
-    })
+    await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for status filter test",
+            "deadline": deadline,
+        },
+    )
 
     # List only open markets
     response = await client.get("/markets?status=open")
@@ -161,6 +184,7 @@ async def test_list_markets_with_status_filter(client: AsyncClient):
 # ORDER VALIDATION TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_order_price_too_low(client: AsyncClient):
     """Verify order fails with price below 0.01."""
@@ -168,20 +192,26 @@ async def test_order_price_too_low(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for low price test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for low price test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.001,  # Too low
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.001,  # Too low
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 422  # Validation error
 
@@ -193,20 +223,26 @@ async def test_order_price_too_high(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for high price test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for high price test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 1.00,  # Too high
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 1.00,  # Too high
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 422  # Validation error
 
@@ -217,13 +253,16 @@ async def test_order_on_nonexistent_market(client: AsyncClient):
     agent_response = await client.post("/agents", json={"name": "no-market-agent"})
     agent_id = agent_response.json()["id"]
 
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": "00000000-0000-0000-0000-000000000000",
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": "00000000-0000-0000-0000-000000000000",
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 404
     assert "market" in response.json()["detail"].lower()
@@ -237,20 +276,26 @@ async def test_order_by_nonexistent_agent(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for nonexistent agent test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for nonexistent agent test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
-    response = await client.post("/orders", json={
-        "agent_id": "00000000-0000-0000-0000-000000000000",
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": "00000000-0000-0000-0000-000000000000",
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
     assert response.status_code == 404
     assert "agent" in response.json()["detail"].lower()
@@ -260,6 +305,7 @@ async def test_order_by_nonexistent_agent(client: AsyncClient):
 # ORDER CANCELLATION TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_cancel_order_refunds_balance(client: AsyncClient):
     """Verify cancelling order refunds locked balance."""
@@ -267,11 +313,14 @@ async def test_cancel_order_refunds_balance(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for cancel refund test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for cancel refund test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Check balance before order
@@ -279,13 +328,16 @@ async def test_cancel_order_refunds_balance(client: AsyncClient):
     locked_before = float(agent_before.json()["locked_balance"])
 
     # Place order
-    order_response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    order_response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
     order_id = order_response.json()["order"]["id"]
 
     # Verify locked increased
@@ -312,20 +364,26 @@ async def test_cancel_order_by_wrong_agent(client: AsyncClient):
 
     # Create market and order by agent1
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for wrong agent cancel test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for wrong agent cancel test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
-    order_response = await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    order_response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
     order_id = order_response.json()["order"]["id"]
 
     # Try to cancel with agent2
@@ -352,6 +410,7 @@ async def test_cancel_nonexistent_order(client: AsyncClient):
 # ORDER MATCHING TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_no_self_trading(client: AsyncClient):
     """Verify agent cannot trade with themselves."""
@@ -359,30 +418,39 @@ async def test_no_self_trading(client: AsyncClient):
     agent_id = agent_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent_id,
-        "question": "Market for self-trade test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent_id,
+            "question": "Market for self-trade test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Place YES order
-    await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
 
     # Place matching NO order from same agent
-    response = await client.post("/orders", json={
-        "agent_id": agent_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     # Order should succeed but no trades
     assert response.status_code == 200
@@ -401,30 +469,39 @@ async def test_partial_order_fill(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for partial fill test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for partial fill test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Agent1 places large YES order
-    order1_response = await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 100
-    })
+    order1_response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 100,
+        },
+    )
 
     # Agent2 places smaller matching NO order
-    order2_response = await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 30
-    })
+    order2_response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 30,
+        },
+    )
 
     # Check trade occurred for 30 shares
     assert len(order2_response.json()["trades"]) == 1
@@ -435,7 +512,9 @@ async def test_partial_order_fill(client: AsyncClient):
 
     # Verify agent1's order is partial
     orders = await client.get(f"/orders?agent_id={agent1_id}")
-    agent1_order = next(o for o in orders.json() if o["id"] == order1_response.json()["order"]["id"])
+    agent1_order = next(
+        o for o in orders.json() if o["id"] == order1_response.json()["order"]["id"]
+    )
     assert agent1_order["status"] == "partial"
     assert agent1_order["filled"] == 30
 
@@ -454,38 +533,50 @@ async def test_multiple_order_matching(client: AsyncClient):
     agent3_id = agent3_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for multi-match test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for multi-match test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Two YES orders at same price
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 20
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 20,
+        },
+    )
 
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 20
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 20,
+        },
+    )
 
     # Large NO order that matches both
-    response = await client.post("/orders", json={
-        "agent_id": agent3_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 40
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent3_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 40,
+        },
+    )
 
     # Should have 2 trades
     assert len(response.json()["trades"]) == 2
@@ -507,39 +598,51 @@ async def test_price_priority_matching(client: AsyncClient):
     agent3_id = agent3_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for price priority test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for price priority test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Agent1 places YES order at 0.55
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.55,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.55,
+            "size": 10,
+        },
+    )
 
     # Agent2 places YES order at higher price 0.60
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
 
     # Agent3 places NO order - should match agent2 first (better price)
-    response = await client.post("/orders", json={
-        "agent_id": agent3_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    response = await client.post(
+        "/orders",
+        json={
+            "agent_id": agent3_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     # Trade should be at 0.60 (agent2's price)
     assert len(response.json()["trades"]) == 1
@@ -549,6 +652,7 @@ async def test_price_priority_matching(client: AsyncClient):
 # =============================================================================
 # POSITION TESTS
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_position_created_after_trade(client: AsyncClient):
@@ -560,29 +664,38 @@ async def test_position_created_after_trade(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for position creation test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for position creation test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Create matching orders
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
 
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     # Check positions
     pos1 = await client.get(f"/positions/{agent1_id}/{market_id}")
@@ -607,44 +720,59 @@ async def test_position_average_price(client: AsyncClient):
     agent3_id = agent3_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for average price test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for average price test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Agent1 buys 10 shares at 0.50
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.50,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
     # Agent1 buys 10 more shares at 0.60
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
-    await client.post("/orders", json={
-        "agent_id": agent3_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent3_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     # Check average price: (10 * 0.50 + 10 * 0.60) / 20 = 0.55
     pos = await client.get(f"/positions/{agent1_id}/{market_id}")
@@ -656,6 +784,7 @@ async def test_position_average_price(client: AsyncClient):
 # ORDER BOOK TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_order_book_with_orders(client: AsyncClient):
     """Test order book reflects placed orders."""
@@ -666,30 +795,39 @@ async def test_order_book_with_orders(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for order book test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for order book test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Place YES orders (bids)
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
     # Place NO orders (asks, converted to YES perspective)
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,  # This means 0.60 in YES terms
-        "size": 20
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,  # This means 0.60 in YES terms
+            "size": 20,
+        },
+    )
 
     # Get order book
     ob_response = await client.get(f"/markets/{market_id}/orderbook")
@@ -727,29 +865,38 @@ async def test_order_book_aggregates_same_price(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for aggregation test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for aggregation test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Multiple orders at same price
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 10,
+        },
+    )
 
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.50,
-        "size": 15
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.50,
+            "size": 15,
+        },
+    )
 
     # Get order book
     ob_response = await client.get(f"/markets/{market_id}/orderbook")
@@ -765,6 +912,7 @@ async def test_order_book_aggregates_same_price(client: AsyncClient):
 # MARKET PRICE UPDATE TESTS
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_market_price_updates_after_trade(client: AsyncClient):
     """Verify market yes_price and no_price update after trades."""
@@ -775,11 +923,14 @@ async def test_market_price_updates_after_trade(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for price update test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={
+            "creator_id": agent1_id,
+            "question": "Market for price update test",
+            "deadline": deadline,
+        },
+    )
     market_id = market_response.json()["id"]
 
     # Initial price is 0.50
@@ -787,21 +938,27 @@ async def test_market_price_updates_after_trade(client: AsyncClient):
     assert float(market.json()["yes_price"]) == 0.50
 
     # Trade at 0.70
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.70,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.70,
+            "size": 10,
+        },
+    )
 
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.30,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.30,
+            "size": 10,
+        },
+    )
 
     # Price should now be 0.70
     market = await client.get(f"/markets/{market_id}")
@@ -819,11 +976,10 @@ async def test_market_volume_increases_after_trade(client: AsyncClient):
     agent2_id = agent2_response.json()["id"]
 
     deadline = get_future_deadline()
-    market_response = await client.post("/markets", json={
-        "creator_id": agent1_id,
-        "question": "Market for volume test",
-        "deadline": deadline
-    })
+    market_response = await client.post(
+        "/markets",
+        json={"creator_id": agent1_id, "question": "Market for volume test", "deadline": deadline},
+    )
     market_id = market_response.json()["id"]
 
     # Initial volume is 0
@@ -831,21 +987,27 @@ async def test_market_volume_increases_after_trade(client: AsyncClient):
     assert float(market.json()["volume"]) == 0.0
 
     # Trade: 10 shares at 0.60 = 6.0 volume
-    await client.post("/orders", json={
-        "agent_id": agent1_id,
-        "market_id": market_id,
-        "side": "YES",
-        "price": 0.60,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent1_id,
+            "market_id": market_id,
+            "side": "YES",
+            "price": 0.60,
+            "size": 10,
+        },
+    )
 
-    await client.post("/orders", json={
-        "agent_id": agent2_id,
-        "market_id": market_id,
-        "side": "NO",
-        "price": 0.40,
-        "size": 10
-    })
+    await client.post(
+        "/orders",
+        json={
+            "agent_id": agent2_id,
+            "market_id": market_id,
+            "side": "NO",
+            "price": 0.40,
+            "size": 10,
+        },
+    )
 
     # Volume should be 6.0 (10 * 0.60)
     market = await client.get(f"/markets/{market_id}")

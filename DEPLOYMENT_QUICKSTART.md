@@ -198,4 +198,3 @@ For detailed information, see:
 - [VERCEL_DEPLOYMENT.md](./docs/VERCEL_DEPLOYMENT.md) - Full deployment guide
 - [ENV_VARIABLES.md](./ENV_VARIABLES.md) - Environment variables reference
 - [ARCHITECTURE.md](./docs/ARCHITECTURE.md) - Technical architecture
-

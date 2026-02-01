@@ -1,16 +1,14 @@
 """API Key generation and validation utilities."""
 
-import secrets
 import hashlib
-from typing import Tuple
-
+import secrets
 
 # API key prefix for easy identification
 API_KEY_PREFIX = "mst_"
 API_KEY_LENGTH = 32  # 32 bytes = 64 hex chars
 
 
-def generate_api_key() -> Tuple[str, str]:
+def generate_api_key() -> tuple[str, str]:
     """
     Generate a new API key and its hash.
 
@@ -66,7 +64,7 @@ def validate_api_key_format(api_key: str) -> bool:
 
     # Check that the rest is valid hex
     try:
-        int(api_key[len(API_KEY_PREFIX):], 16)
+        int(api_key[len(API_KEY_PREFIX) :], 16)
         return True
     except ValueError:
         return False

@@ -1,6 +1,5 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,10 +8,10 @@ from sqlmodel import select
 from server.config import settings
 from server.models.agent import Agent
 from server.models.market import Market, MarketStatus, Outcome
-from server.models.order import Order, OrderStatus
-from server.models.platform import PlatformFee, FeeType
-from server.models.position import Position
 from server.models.moderator_reward import ModeratorReward
+from server.models.order import Order, OrderStatus
+from server.models.platform import FeeType, PlatformFee
+from server.models.position import Position
 from server.services.matching import update_platform_stats
 
 
@@ -21,8 +20,8 @@ async def resolve_market(
     market_id: UUID,
     outcome: Outcome,
     moderator_id: UUID,
-    evidence: Optional[str] = None
-) -> Dict:
+    evidence: str | None = None,
+) -> dict:
     """
     Resolve a market and payout winners.
 
@@ -36,9 +35,7 @@ async def resolve_market(
     Returns summary of resolution.
     """
     # Get market
-    result = await session.execute(
-        select(Market).where(Market.id == market_id).with_for_update()
-    )
+    result = await session.execute(select(Market).where(Market.id == market_id).with_for_update())
     market = result.scalar_one_or_none()
 
     if not market:
@@ -126,7 +123,7 @@ async def resolve_market(
                     amount=settlement_fee,
                     agent_id=position.agent_id,
                     market_id=market_id,
-                    description=f"Settlement fee on {shares} winning shares"
+                    description=f"Settlement fee on {shares} winning shares",
                 )
                 session.add(fee_record)
 
@@ -176,7 +173,7 @@ async def resolve_market(
                 platform_share=moderator_platform_share,
                 winner_fee=moderator_winner_fee,
                 total_reward=total_moderator_reward,
-                total_winner_profits=total_winner_profits
+                total_winner_profits=total_winner_profits,
             )
             session.add(reward_record)
 
@@ -193,13 +190,13 @@ async def resolve_market(
         "payouts": {
             "total_winners": winners,
             "total_payout": float(total_payout),
-            "total_fees": float(total_settlement_fees)
+            "total_fees": float(total_settlement_fees),
         },
         "moderator_reward": {
             "platform_share": float(moderator_platform_share),
             "winner_fee": float(moderator_winner_fee),
-            "total": float(total_moderator_reward)
-        }
+            "total": float(total_moderator_reward),
+        },
     }
 
 

@@ -1,25 +1,24 @@
 from decimal import Decimal
-from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from server.database import get_session
 from server.models.agent import Agent
 from server.models.market import Market
-from server.models.wallet import AgentWallet, Transaction, TransactionType, TransactionStatus
+from server.models.wallet import AgentWallet, Transaction, TransactionType
 from server.schemas.wallet import (
-    WalletResponse,
-    WalletWithBalance,
-    TransactionResponse,
+    FaucetRequest,
+    FaucetResponse,
     TransactionWithDetails,
     TransferRequest,
     TransferResponse,
-    FaucetRequest,
-    FaucetResponse,
+    WalletResponse,
     WalletStats,
+    WalletWithBalance,
 )
 
 router = APIRouter(prefix="/wallet", tags=["wallet"])
@@ -27,34 +26,37 @@ router = APIRouter(prefix="/wallet", tags=["wallet"])
 
 async def get_or_create_wallet(agent_id: UUID, session: AsyncSession) -> AgentWallet:
     """Get existing wallet or create one for the agent."""
-    result = await session.execute(
-        select(AgentWallet).where(AgentWallet.agent_id == agent_id)
-    )
+    result = await session.execute(select(AgentWallet).where(AgentWallet.agent_id == agent_id))
     wallet = result.scalar_one_or_none()
 
     if not wallet:
         # Create new wallet
         wallet = AgentWallet(
-            agent_id=agent_id,
-            internal_address=AgentWallet.generate_internal_address(agent_id)
+            agent_id=agent_id, internal_address=AgentWallet.generate_internal_address(agent_id)
         )
         session.add(wallet)
-        await session.commit()
-        await session.refresh(wallet)
+        try:
+            await session.commit()
+            await session.refresh(wallet)
+        except IntegrityError:
+            # If commit fails (e.g., duplicate key due to race condition),
+            # rollback and fetch the existing wallet
+            await session.rollback()
+            result = await session.execute(
+                select(AgentWallet).where(AgentWallet.agent_id == agent_id)
+            )
+            wallet = result.scalar_one_or_none()
+            if not wallet:
+                raise  # Re-raise if still not found
 
     return wallet
 
 
 @router.get("/{agent_id}", response_model=WalletWithBalance)
-async def get_wallet(
-    agent_id: UUID,
-    session: AsyncSession = Depends(get_session)
-):
+async def get_wallet(agent_id: UUID, session: AsyncSession = Depends(get_session)):
     """Get wallet details for an agent."""
     # Verify agent exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -75,19 +77,17 @@ async def get_wallet(
     )
 
 
-@router.get("/{agent_id}/transactions", response_model=List[TransactionWithDetails])
+@router.get("/{agent_id}/transactions", response_model=list[TransactionWithDetails])
 async def get_transactions(
     agent_id: UUID,
     limit: int = Query(default=20, le=100),
     offset: int = Query(default=0, ge=0),
-    type: Optional[TransactionType] = Query(default=None),
-    session: AsyncSession = Depends(get_session)
+    type: TransactionType | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
 ):
     """Get transaction history for an agent's wallet."""
     # Verify agent exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -126,18 +126,14 @@ async def get_transactions(
 
         # Fetch market question if present
         if tx.market_id:
-            market_result = await session.execute(
-                select(Market).where(Market.id == tx.market_id)
-            )
+            market_result = await session.execute(select(Market).where(Market.id == tx.market_id))
             market = market_result.scalar_one_or_none()
             if market:
                 tx_dict.market_question = market.question[:100]
 
         # Fetch counterparty name if present
         if tx.counterparty_id:
-            cp_result = await session.execute(
-                select(Agent).where(Agent.id == tx.counterparty_id)
-            )
+            cp_result = await session.execute(select(Agent).where(Agent.id == tx.counterparty_id))
             cp = cp_result.scalar_one_or_none()
             if cp:
                 tx_dict.counterparty_name = cp.name
@@ -148,15 +144,10 @@ async def get_transactions(
 
 
 @router.get("/{agent_id}/stats", response_model=WalletStats)
-async def get_wallet_stats(
-    agent_id: UUID,
-    session: AsyncSession = Depends(get_session)
-):
+async def get_wallet_stats(agent_id: UUID, session: AsyncSession = Depends(get_session)):
     """Get wallet statistics for an agent."""
     # Verify agent exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -164,9 +155,7 @@ async def get_wallet_stats(
     wallet = await get_or_create_wallet(agent_id, session)
 
     # Get all transactions for stats
-    result = await session.execute(
-        select(Transaction).where(Transaction.wallet_id == wallet.id)
-    )
+    result = await session.execute(select(Transaction).where(Transaction.wallet_id == wallet.id))
     transactions = result.scalars().all()
 
     # Calculate stats
@@ -199,15 +188,11 @@ async def get_wallet_stats(
 
 @router.post("/{agent_id}/transfer", response_model=TransferResponse)
 async def transfer_tokens(
-    agent_id: UUID,
-    request: TransferRequest,
-    session: AsyncSession = Depends(get_session)
+    agent_id: UUID, request: TransferRequest, session: AsyncSession = Depends(get_session)
 ):
     """Transfer tokens to another agent by wallet address."""
     # Verify sender agent exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
     sender = result.scalar_one_or_none()
     if not sender:
         raise HTTPException(status_code=404, detail="Sender agent not found")
@@ -225,9 +210,7 @@ async def transfer_tokens(
         raise HTTPException(status_code=404, detail="Recipient wallet not found")
 
     # Get recipient agent
-    result = await session.execute(
-        select(Agent).where(Agent.id == recipient_wallet.agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == recipient_wallet.agent_id))
     recipient = result.scalar_one_or_none()
     if not recipient:
         raise HTTPException(status_code=404, detail="Recipient agent not found")
@@ -281,13 +264,11 @@ async def transfer_tokens(
 async def request_faucet(
     agent_id: UUID,
     request: FaucetRequest = FaucetRequest(),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """Request tokens from faucet (for testing)."""
     # Verify agent exists
-    result = await session.execute(
-        select(Agent).where(Agent.id == agent_id)
-    )
+    result = await session.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -318,10 +299,7 @@ async def request_faucet(
 
 
 @router.get("/lookup/{address}", response_model=WalletResponse)
-async def lookup_wallet(
-    address: str,
-    session: AsyncSession = Depends(get_session)
-):
+async def lookup_wallet(address: str, session: AsyncSession = Depends(get_session)):
     """Lookup wallet by internal address."""
     result = await session.execute(
         select(AgentWallet).where(AgentWallet.internal_address == address)

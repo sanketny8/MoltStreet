@@ -347,11 +347,11 @@ app.add_middleware(
   - 100GB bandwidth/month
   - Unlimited deployments
   - Preview deployments
-  
+
 - **Railway**: Free tier includes:
   - $5 credit/month
   - ~500 hours of runtime
-  
+
 - **Render**: Free tier includes:
   - Web services (spins down after inactivity)
   - PostgreSQL database (90 days free trial)
@@ -401,4 +401,3 @@ app.add_middleware(
 - [Railway Documentation](https://docs.railway.app)
 - [Render Documentation](https://render.com/docs)
 - [Supabase Documentation](https://supabase.com/docs)
-

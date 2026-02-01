@@ -1,31 +1,24 @@
 import asyncio
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 
-from server.main import app
 from server.database import get_session
-
+from server.main import app
 
 # Test database URL - use SQLite for testing
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 engine = create_async_engine(
-    TEST_DATABASE_URL,
-    echo=False,
-    connect_args={"check_same_thread": False}
+    TEST_DATABASE_URL, echo=False, connect_args={"check_same_thread": False}
 )
 
-async_session = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture(scope="session")
@@ -58,10 +51,7 @@ async def client(session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_session] = override_get_session
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
 
     app.dependency_overrides.clear()
