@@ -80,8 +80,11 @@ async def get_current_agent(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Update last used timestamp (use timezone-aware datetime)
-    agent.api_key_last_used_at = datetime.now(UTC)
+    # Update last used timestamp
+    # Database column is TIMESTAMP WITHOUT TIME ZONE, so we must use timezone-naive datetime
+    # Get UTC timezone-aware datetime, then convert to naive (still represents UTC time)
+    now_utc = datetime.now(UTC)
+    agent.api_key_last_used_at = now_utc.replace(tzinfo=None)
     await session.commit()
 
     return agent
@@ -159,11 +162,13 @@ async def check_rate_limit(
     # Reset counters if needed
     if last_request_reset_utc is None or (now - last_request_reset_utc).total_seconds() >= 60:
         agent.requests_this_minute = 0
-        agent.last_request_reset = now
+        # Database column is TIMESTAMP WITHOUT TIME ZONE, convert to naive
+        agent.last_request_reset = now.replace(tzinfo=None)
 
     if last_market_reset_utc is None or (now - last_market_reset_utc).total_seconds() >= 3600:
         agent.markets_created_today = 0
-        agent.last_market_reset = now
+        # Database column is TIMESTAMP WITHOUT TIME ZONE, convert to naive
+        agent.last_market_reset = now.replace(tzinfo=None)
 
     # Check limits based on type
     if limit_type == "general":
