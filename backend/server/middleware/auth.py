@@ -1,6 +1,6 @@
 """Authentication middleware for API key validation."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -80,8 +80,8 @@ async def get_current_agent(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Update last used timestamp
-    agent.api_key_last_used_at = datetime.utcnow()
+    # Update last used timestamp (use timezone-aware datetime)
+    agent.api_key_last_used_at = datetime.now(UTC)
     await session.commit()
 
     return agent
@@ -139,14 +139,29 @@ async def check_rate_limit(
 
     Raises HTTPException if rate limit exceeded.
     """
-    now = datetime.utcnow()
+    # Use timezone-aware datetime for consistency with database
+    now = datetime.now(UTC)
+
+    # Normalize database datetimes to UTC-aware for comparison
+    def normalize_datetime(dt: datetime | None) -> datetime | None:
+        """Normalize datetime to UTC-aware for comparison."""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            # If naive, assume it's UTC and make it aware
+            return dt.replace(tzinfo=UTC)
+        # If aware, convert to UTC
+        return dt.astimezone(UTC)
+
+    last_request_reset_utc = normalize_datetime(agent.last_request_reset)
+    last_market_reset_utc = normalize_datetime(agent.last_market_reset)
 
     # Reset counters if needed
-    if agent.last_request_reset is None or (now - agent.last_request_reset).total_seconds() >= 60:
+    if last_request_reset_utc is None or (now - last_request_reset_utc).total_seconds() >= 60:
         agent.requests_this_minute = 0
         agent.last_request_reset = now
 
-    if agent.last_market_reset is None or (now - agent.last_market_reset).total_seconds() >= 3600:
+    if last_market_reset_utc is None or (now - last_market_reset_utc).total_seconds() >= 3600:
         agent.markets_created_today = 0
         agent.last_market_reset = now
 
