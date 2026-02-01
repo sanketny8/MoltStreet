@@ -27,64 +27,96 @@ def upgrade() -> None:
     bind = op.get_bind()
     is_postgresql = bind.dialect.name == "postgresql"
 
-    # Create comments table
-    op.create_table(
-        "comments",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("market_id", sa.Uuid(), nullable=False),
-        sa.Column("agent_id", sa.Uuid(), nullable=False),
-        sa.Column("parent_id", sa.Uuid(), nullable=True),  # For threaded replies
-        sa.Column("content", sqlmodel.sql.sqltypes.AutoString(length=5000), nullable=False),
-        sa.Column(
-            "sentiment", sqlmodel.sql.sqltypes.AutoString(), nullable=True
-        ),  # "bullish", "bearish", "neutral"
-        sa.Column(
-            "price_prediction", sa.Numeric(), nullable=True
-        ),  # Optional price prediction (0.01-0.99)
-        sa.Column("upvotes", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("downvotes", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("reply_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_pinned", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_edited", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("edited_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["market_id"], ["markets.id"]),
-        sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
-        sa.ForeignKeyConstraint(["parent_id"], ["comments.id"]),  # Self-referential for replies
-        sa.PrimaryKeyConstraint("id"),
-    )
+    # Check if comments table already exists (idempotent migration)
+    inspector = sa.inspect(bind)
+    existing_tables = inspector.get_table_names()
 
-    # Create indexes for comments table
-    op.create_index(op.f("ix_comments_market_id"), "comments", ["market_id"], unique=False)
-    op.create_index(op.f("ix_comments_agent_id"), "comments", ["agent_id"], unique=False)
-    op.create_index(op.f("ix_comments_parent_id"), "comments", ["parent_id"], unique=False)
-    op.create_index(op.f("ix_comments_created_at"), "comments", ["created_at"], unique=False)
+    # Create comments table only if it doesn't exist
+    if "comments" not in existing_tables:
+        op.create_table(
+            "comments",
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("market_id", sa.Uuid(), nullable=False),
+            sa.Column("agent_id", sa.Uuid(), nullable=False),
+            sa.Column("parent_id", sa.Uuid(), nullable=True),  # For threaded replies
+            sa.Column("content", sqlmodel.sql.sqltypes.AutoString(length=5000), nullable=False),
+            sa.Column(
+                "sentiment", sqlmodel.sql.sqltypes.AutoString(), nullable=True
+            ),  # "bullish", "bearish", "neutral"
+            sa.Column(
+                "price_prediction", sa.Numeric(), nullable=True
+            ),  # Optional price prediction (0.01-0.99)
+            sa.Column("upvotes", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("downvotes", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("reply_count", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("is_pinned", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("is_edited", sa.Boolean(), nullable=False, server_default="false"),
+            sa.Column("edited_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+            sa.ForeignKeyConstraint(["market_id"], ["markets.id"]),
+            sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
+            sa.ForeignKeyConstraint(["parent_id"], ["comments.id"]),  # Self-referential for replies
+            sa.PrimaryKeyConstraint("id"),
+        )
 
-    # Create comment_votes table
-    op.create_table(
-        "comment_votes",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("comment_id", sa.Uuid(), nullable=False),
-        sa.Column("agent_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "vote_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False
-        ),  # "upvote" or "downvote"
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["comment_id"], ["comments.id"]),
-        sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
-        sa.PrimaryKeyConstraint("id"),
-    )
+    # Create indexes for comments table (only if they don't exist)
+    if "comments" in existing_tables:
+        existing_indexes = {idx["name"] for idx in inspector.get_indexes("comments")}
+    else:
+        existing_indexes = set()
+
+    if "ix_comments_market_id" not in existing_indexes:
+        op.create_index(op.f("ix_comments_market_id"), "comments", ["market_id"], unique=False)
+    if "ix_comments_agent_id" not in existing_indexes:
+        op.create_index(op.f("ix_comments_agent_id"), "comments", ["agent_id"], unique=False)
+    if "ix_comments_parent_id" not in existing_indexes:
+        op.create_index(op.f("ix_comments_parent_id"), "comments", ["parent_id"], unique=False)
+    if "ix_comments_created_at" not in existing_indexes:
+        op.create_index(op.f("ix_comments_created_at"), "comments", ["created_at"], unique=False)
+
+    # Create comment_votes table only if it doesn't exist
+    if "comment_votes" not in existing_tables:
+        op.create_table(
+            "comment_votes",
+            sa.Column("id", sa.Uuid(), nullable=False),
+            sa.Column("comment_id", sa.Uuid(), nullable=False),
+            sa.Column("agent_id", sa.Uuid(), nullable=False),
+            sa.Column(
+                "vote_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False
+            ),  # "upvote" or "downvote"
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.ForeignKeyConstraint(["comment_id"], ["comments.id"]),
+            sa.ForeignKeyConstraint(["agent_id"], ["agents.id"]),
+            sa.PrimaryKeyConstraint("id"),
+        )
+
+    # Check for existing constraints and indexes on comment_votes
+    if "comment_votes" in existing_tables:
+        existing_indexes_votes = {idx["name"] for idx in inspector.get_indexes("comment_votes")}
+        existing_constraints = {
+            con["name"] for con in inspector.get_unique_constraints("comment_votes")
+        }
+    else:
+        existing_indexes_votes = set()
+        existing_constraints = set()
 
     # Create unique constraint for comment_votes (one vote per agent per comment)
-    op.create_unique_constraint("unique_comment_vote", "comment_votes", ["comment_id", "agent_id"])
+    if "unique_comment_vote" not in existing_constraints:
+        op.create_unique_constraint(
+            "unique_comment_vote", "comment_votes", ["comment_id", "agent_id"]
+        )
 
     # Create indexes for comment_votes table
-    op.create_index(
-        op.f("ix_comment_votes_comment_id"), "comment_votes", ["comment_id"], unique=False
-    )
-    op.create_index(op.f("ix_comment_votes_agent_id"), "comment_votes", ["agent_id"], unique=False)
+    if "ix_comment_votes_comment_id" not in existing_indexes_votes:
+        op.create_index(
+            op.f("ix_comment_votes_comment_id"), "comment_votes", ["comment_id"], unique=False
+        )
+    if "ix_comment_votes_agent_id" not in existing_indexes_votes:
+        op.create_index(
+            op.f("ix_comment_votes_agent_id"), "comment_votes", ["agent_id"], unique=False
+        )
 
 
 def downgrade() -> None:
